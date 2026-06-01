@@ -52,8 +52,11 @@
 #include "extio.h"
 #include "extio_technology.h"
 #include "memcad.h"
+#include "ncc.h"
 
 using namespace std;
+
+void output_NCC(const NCC_result &nr, const InputParameter &ip);
 
 
 InputParameter::InputParameter()
@@ -63,7 +66,12 @@ InputParameter::InputParameter()
  cl_power_gated(false),
  interconect_power_gated(false),
  power_gating(false),
- cl_vertical (true)
+ cl_vertical (true),
+ ncc_enable(false),
+ ncc_num_units(0),
+ ncc_fus_per_unit(32),
+ ncc_clock_mhz(1410.0),
+ ncc_activity_factor(0.054)
 {
 
 }
@@ -1041,10 +1049,33 @@ InputParameter::parse_cfg(const string & in_file)
 	  }
      
     }
-	
-	
-	
-	
+
+    if (!strncmp("-ncc_enable", line, strlen("-ncc_enable"))) {
+      sscanf(line, "-ncc_enable%[^\"]\"%[^\"]\"", jk, temp_var);
+      ncc_enable = (!strncmp("true", temp_var, strlen("true")));
+      continue;
+    }
+
+    if (!strncmp("-ncc_num_units", line, strlen("-ncc_num_units"))) {
+      sscanf(line, "-ncc_num_units %u", &ncc_num_units);
+      continue;
+    }
+
+    if (!strncmp("-ncc_fus_per_unit", line, strlen("-ncc_fus_per_unit"))) {
+      sscanf(line, "-ncc_fus_per_unit %u", &ncc_fus_per_unit);
+      continue;
+    }
+
+    if (!strncmp("-ncc_clock_mhz", line, strlen("-ncc_clock_mhz"))) {
+      sscanf(line, "-ncc_clock_mhz %lf", &ncc_clock_mhz);
+      continue;
+    }
+
+    if (!strncmp("-ncc_activity_factor", line, strlen("-ncc_activity_factor"))) {
+      sscanf(line, "-ncc_activity_factor %lf", &ncc_activity_factor);
+      continue;
+    }
+
   }
   rpters_in_htree = true;
   fclose(fp);
@@ -1338,6 +1369,15 @@ uca_org_t cacti_interface(const string & infile_name)
   output_UCA(&fin_res);
   output_data_csv(fin_res, infile_name + ".out");
 
+  if (g_ip->ncc_enable) {
+    NCC_params np;
+    np.num_units       = g_ip->ncc_num_units;
+    np.fus_per_unit    = g_ip->ncc_fus_per_unit;
+    np.clock_mhz       = g_ip->ncc_clock_mhz;
+    np.activity_factor = g_ip->ncc_activity_factor;
+    NCC_result nr = model_ncc(np);
+    output_NCC(nr, *g_ip);
+  }
 
   // Memcad Optimization
   MemCadParameters memcad_params(g_ip);
@@ -2726,6 +2766,34 @@ void output_data_csv(const uca_org_t & fin_res, string fn)
   file.close();
 }
 
+
+
+void output_NCC(const NCC_result &nr, const InputParameter &ip)
+{
+  double l2_area_mm2 = 0.0;  // placeholder; caller may pass L2 area for ratio
+  double pct = (nr.total_area_mm2 > 0 && l2_area_mm2 > 0)
+                   ? 100.0 * nr.total_area_mm2 / l2_area_mm2 : 0.0;
+
+  cout << "\n===== NCC (Near-Cache Compute) Results =====\n";
+  cout << "  Units:               " << ip.ncc_num_units << "\n";
+  cout << "  FP32 FMAs / unit:    " << ip.ncc_fus_per_unit << "\n";
+  cout << "  Technology:          " << ip.F_sz_nm << " nm\n";
+  cout << "  Clock:               " << ip.ncc_clock_mhz << " MHz\n";
+  cout << "  Activity factor:     " << ip.ncc_activity_factor << "\n\n";
+
+  cout << "  Area per NCC unit:   " << nr.area_per_unit_mm2 << " mm^2\n";
+  cout << "  Total NCC area:      " << nr.total_area_mm2 << " mm^2";
+  if (pct > 0.0) cout << "  (" << pct << "% of L2)";
+  cout << "\n\n";
+
+  cout << "  Dynamic power/unit:  " << nr.dynamic_power_per_unit_mW << " mW"
+       << "  (alpha=" << ip.ncc_activity_factor << ")\n";
+  cout << "  Total dynamic power: " << nr.total_dynamic_power_W << " W\n\n";
+
+  cout << "  Leakage power/unit:  " << nr.leakage_power_per_unit_mW << " mW\n";
+  cout << "  Total leakage power: " << nr.total_leakage_power_W << " W\n";
+  cout << "============================================\n\n";
+}
 
 
 void output_UCA(uca_org_t *fr)

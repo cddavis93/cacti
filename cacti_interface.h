@@ -331,11 +331,16 @@ class InputParameter
 	bool mirror_in_bob;// true if all the channels in the bob have the same configs
 	
 	bool total_power; // false means just considering I/O Power
-	
-	bool verbose;
-	
 
-	
+	bool verbose;
+
+	// NCC (Near-Cache Compute) parameters
+	bool     ncc_enable;
+	unsigned ncc_num_units;
+	unsigned ncc_fus_per_unit;
+	double   ncc_clock_mhz;
+	double   ncc_activity_factor;
+
 };
 
 
