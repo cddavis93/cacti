@@ -5,6 +5,7 @@ Combines CACTI energy-per-access values with accel-sim L2 access counts
 to produce workload-level L2 + NCC power estimates.
 
 CACTI values are read from a CACTI .out file (default: cache_a100_baseline.cfg.out).
+Config files live in cacti/configs/; .out files are written to cacti/ root by CACTI.
 The script selects the last row in the .out file whose capacity, associativity,
 and output-width match the A100 slice config (524288 B, 16-way, 1024-bit).
 
@@ -40,10 +41,11 @@ NCC_LEAK_W = 0.157266    # W  NCC leakage power  (80 units)
 # ---------------------------------------------------------------------------
 # Load CACTI .out file and extract E_read, E_write, leakage
 # ---------------------------------------------------------------------------
-SCRIPT_DIR = Path(__file__).parent
-CACTI_DIR  = SCRIPT_DIR.parent  # cacti root — where CACTI writes .out files
-OUT_FILE   = Path(sys.argv[1]) if len(sys.argv) > 1 \
-             else CACTI_DIR / "cache_a100_baseline.cfg.out"
+SCRIPT_DIR  = Path(__file__).parent
+CACTI_DIR   = SCRIPT_DIR.parent          # cacti root
+CONFIGS_DIR = CACTI_DIR / "configs"      # configs/ — where CACTI writes .out files
+OUT_FILE    = Path(sys.argv[1]) if len(sys.argv) > 1 \
+              else CONFIGS_DIR / "cache_a100_baseline.cfg.out"
 
 def load_cacti_out(path):
     """

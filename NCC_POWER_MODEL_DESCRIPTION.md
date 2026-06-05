@@ -73,7 +73,7 @@ area_scale = (F_sz_um / 0.007)²
 
 At 7nm: scale = 1.0 → area_per_unit = 32 × 3000 × 8e-8 mm² = **7.68×10⁻³ mm²** per unit, **0.614 mm² total** across 80 units (~1.5% of the estimated 40 mm² A100 L2 area).
 
-At 90nm (current `cache.cfg` default): scale = (0.09/0.007)² ≈ 165 → the area grows proportionally. The 90nm numbers are physically correct for that node but are not the target configuration — change `-technology (u)` to `0.007` for A100-representative results.
+At 90nm (current `configs/cache_a100_ncc.cfg` default): scale = (0.09/0.007)² ≈ 165 → the area grows proportionally. The 90nm numbers are physically correct for that node but are not the target configuration — change `-technology (u)` to `0.007` for A100-representative results.
 
 ---
 
@@ -167,7 +167,7 @@ All of these are populated by `technology.cc`'s `init_tech_params()` function, w
 ## Integration with CACTI's Execution Flow
 
 ```
-./cacti -infile cache.cfg
+./cacti -infile configs/cache_a100_ncc.cfg
   │
   ├─ InputParameter::parse_cfg()         ← reads -ncc_* keys into g_ip
   ├─ init_tech_params(g_ip->F_sz_um)     ← populates g_tp from tech_params/*.dat

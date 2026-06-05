@@ -27,7 +27,7 @@ The build uses two makefiles: `makefile` (top-level dispatcher) and `cacti.mk` (
 
 Config-file mode (preferred):
 ```bash
-./cacti -infile cache.cfg
+./cacti -infile configs/cache_a100_ncc.cfg
 ```
 
 Command-line mode (52, 55, or 64 positional args — see README for the full list):
@@ -39,7 +39,7 @@ Regression tests are listed in `regression.test`; run them manually by executing
 
 ## Configuration files
 
-`cache.cfg` is the main example config. Lines beginning with `//` are commented out. Key parameters:
+`cache_a100_ncc.cfg` is the primary NCC config (A100 L2 slice + NCC enabled). Lines beginning with `//` are commented out. Key parameters:
 - `-size (bytes)` — cache/memory size
 - `-technology (u)` — process node in microns (16nm–180nm; data in `tech_params/`)
 - `-cache type "cache"|"ram"|"main memory"` — selects tag array presence and access granularity

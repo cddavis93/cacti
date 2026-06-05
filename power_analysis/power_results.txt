@@ -1,5 +1,5 @@
 ====================================================================================================
-  CACTI .out source : /home/cory/cacti/cache_a100_baseline.cfg.out
+  CACTI .out source : /home/cory/cacti/configs/cache_a100_baseline.cfg.out
   Technology        : 22 nm    Access time: 2.804 ns    Area/slice: 2.0962 mm²  (167.69 mm² total)
   E_read = 0.786912 nJ/access    E_write = 0.840105 nJ/access    Leakage/slice = 158.976 mW  (12.718 W total)
   Clock: 1.41 GHz    Slices: 80

@@ -3,7 +3,7 @@
 ## What Was Done
 
 1. Created git branch `ncc` for all NCC-related changes.
-2. Verified CACTI builds and runs with `./cacti -infile cache.cfg`.
+2. Verified CACTI builds and runs with `./cacti -infile configs/cache_a100_ncc.cfg`.
 3. Implemented a new NCC (Near-Cache Compute) hardware model in CACTI that estimates
    area, dynamic power, and leakage for the FP32 FMA datapaths placed at each L2 cache slice.
 
@@ -48,7 +48,7 @@ We use a **gate-count** reference calibrated at 7nm and scale with CACTI's techn
 | `cacti_interface.h` | Added 5 NCC fields to `InputParameter` |
 | `io.cc` | NCC defaults in constructor, config parsing, `output_NCC()` function, call after `output_UCA()` |
 | `cacti.mk` | Added `ncc.cc` to `SRCS` |
-| `cache.cfg` | Added NCC parameter section (A100 defaults: 80 units, 32 FMAs, 1410 MHz, α=0.054) |
+| `configs/cache_a100_ncc.cfg` | Added NCC parameter section (A100 defaults: 80 units, 32 FMAs, 1410 MHz, α=0.054) |
 
 ---
 
@@ -70,7 +70,7 @@ To disable NCC output: set `-ncc_enable "false"` or omit the `-ncc_*` lines.
 
 ```bash
 make                          # debug build
-./cacti -infile cache.cfg     # produces NCC section after UCA results
+./cacti -infile configs/cache_a100_ncc.cfg     # produces NCC section after UCA results
 make opt                      # optimized (multi-threaded) build
 ```
 
@@ -79,7 +79,7 @@ make opt                      # optimized (multi-threaded) build
 ## Technology Scaling
 
 The model is parameterized by `g_ip->F_sz_um` (set via `-technology (u) X` in the config).
-Change the technology node in `cache.cfg` to get correctly scaled NCC estimates:
+Change the technology node in `configs/cache_a100_ncc.cfg` to get correctly scaled NCC estimates:
 
 | Technology | `-technology (u)` |
 |-----------|-------------------|
