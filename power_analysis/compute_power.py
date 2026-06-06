@@ -215,7 +215,7 @@ def emit(*args, **kwargs):
     print(*args, **kwargs)
     print(*args, **kwargs, file=buf)
 
-W = 100
+W = 155
 emit("=" * W)
 emit(f"  Technology : {TECH_NM:.0f} nm    Clock: {CLOCK_HZ/1e9:.2f} GHz")
 emit(f"  L2 .out    : {OUT_FILE}")
@@ -228,35 +228,42 @@ emit(f"    E_read={L1_E_READ_NJ} nJ  E_write={L1_E_WRITE_NJ} nJ  "
      f"({LEAK_L1_TOTAL_W:.3f} W x{N_L1_SMS})  Area/SM={L1_AREA_MM2:.4f} mm²")
 emit("=" * W)
 
-FMT = "{:<22} {:>8} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>12}"
+FMT = "{:<22} {:>8} {:>12} {:>12} {:>12} {:>12} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>12}"
 emit(FMT.format(
     "Workload", "Config",
+    "L1 reads", "L1 writes", "L2 reads", "L2 writes",
     "L1 Dyn(W)", "L2 Dyn(W)", "L1 Lk(W)", "L2 Lk(W)",
-    "NCC Dyn(W)", "NCC Lk(W)", "Cycles", "FULL TOT(W)"
+    "NCC Dyn(W)", "NCC Lk(W)", "FULL TOT(W)"
 ))
 emit("-" * W)
 
 for r in results:
     emit(FMT.format(
         r["workload"], "baseline",
+        f"{r['base_l1_reads']:.0f}", f"{r['base_l1_writes']:.0f}",
+        f"{r['base_l2_reads']:.0f}", f"{r['base_l2_writes']:.0f}",
         f"{r['base_l1_dyn_W']:.4f}", f"{r['base_l2_dyn_W']:.4f}",
         f"{r['base_l1_leak_W']:.3f}", f"{r['base_l2_leak_W']:.3f}",
         "—", "—",
-        f"{r['base_cycles']:.0f}",
         f"{r['base_full_total_W']:.3f}"
     ))
     emit(FMT.format(
         "", "ncc_fp3",
+        f"{r['ncc_l1_reads']:.0f}", f"{r['ncc_l1_writes']:.0f}",
+        f"{r['ncc_l2_reads']:.0f}", f"{r['ncc_l2_writes']:.0f}",
         f"{r['ncc_l1_dyn_W']:.4f}", f"{r['ncc_l2_dyn_W']:.4f}",
         f"{r['ncc_l1_leak_W']:.3f}", f"{r['ncc_l2_leak_W']:.3f}",
         f"{r['ncc_hw_dyn_W']:.4f}", f"{r['ncc_hw_leak_W']:.4f}",
-        f"{r['ncc_cycles']:.0f}",
         f"{r['ncc_full_total_W']:.3f}"
     ))
     emit(FMT.format(
         "", "delta",
+        f"{r['ncc_l1_reads'] - r['base_l1_reads']:+.0f}",
+        f"{r['ncc_l1_writes'] - r['base_l1_writes']:+.0f}",
+        f"{r['ncc_l2_reads'] - r['base_l2_reads']:+.0f}",
+        f"{r['ncc_l2_writes'] - r['base_l2_writes']:+.0f}",
         f"{r['delta_l1_dyn_W']:+.4f}", f"{r['delta_l2_dyn_W']:+.4f}",
-        "0.000", "0.000", "—", "—", "",
+        "0.000", "0.000", "—", "—",
         f"{r['delta_full_total_W']:+.3f}"
     ))
     emit()
