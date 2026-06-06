@@ -21,70 +21,82 @@ from pathlib import Path
 from io import StringIO
 
 # ---------------------------------------------------------------------------
-# Config-matching criteria — identifies the A100 L2 slice row in the .out file
+# Config-matching criteria
 # ---------------------------------------------------------------------------
-MATCH_CAPACITY_B   = 524288   # 512 KB per slice
-MATCH_ASSOC        = 16
-MATCH_OUTPUT_W     = 1024     # bits (one 128-byte cache line)
+# L2: 512 KB per slice, 16-way, 1024-bit output
+L2_MATCH_CAPACITY_B = 524288
+L2_MATCH_ASSOC      = 16
+L2_MATCH_OUTPUT_W   = 1024
+
+# L1: 128 KB per SM, 4-way, 1024-bit output
+L1_MATCH_CAPACITY_B = 131072
+L1_MATCH_ASSOC      = 4
+L1_MATCH_OUTPUT_W   = 1024
 
 # ---------------------------------------------------------------------------
 # Fixed constants not present in the .out file
 # ---------------------------------------------------------------------------
-N_SLICES   = 80       # A100 L2 slices
-CLOCK_HZ   = 1.41e9  # A100 L2 clock (Hz)
+N_L2_SLICES = 80    # A100 L2 slices
+N_L1_SMS    = 108   # A100 SMs (one L1 per SM)
+CLOCK_HZ    = 1.41e9
 
-# NCC hardware additions — from CACTI NCC model stdout (ncc.cc output).
-# Not written to the .out file; kept here as verified constants.
+# NCC hardware — from CACTI NCC model stdout (ncc.cc); not in .out file.
 NCC_DYN_W          = 0.0282766   # W    NCC dynamic power  (80 units, alpha=0.054)
 NCC_LEAK_W         = 0.157266    # W    NCC leakage power  (80 units)
 NCC_UNIT_AREA_MM2  = 0.0758596   # mm²  NCC area per unit  (32 FMAs @ 22nm)
 NCC_TOTAL_AREA_MM2 = 6.06877     # mm²  NCC area total     (80 units)
 
 # ---------------------------------------------------------------------------
-# Load CACTI .out file and extract E_read, E_write, leakage
+# Load CACTI .out files
 # ---------------------------------------------------------------------------
 SCRIPT_DIR  = Path(__file__).parent
-CACTI_DIR   = SCRIPT_DIR.parent          # cacti root
-CONFIGS_DIR = CACTI_DIR / "configs"      # configs/ — where CACTI writes .out files
+CACTI_DIR   = SCRIPT_DIR.parent
+CONFIGS_DIR = CACTI_DIR / "configs"
 OUT_FILE    = Path(sys.argv[1]) if len(sys.argv) > 1 \
               else CONFIGS_DIR / "cache_a100_baseline.cfg.out"
+L1_OUT_FILE = CONFIGS_DIR / "cache_a100_l1.cfg.out"
 
-def load_cacti_out(path):
-    """
-    Parse a CACTI .out CSV and return the last row matching the A100 slice
-    config.  Raises if no matching row is found.
-    """
+def load_cacti_out(path, cap_b, assoc, outw):
+    """Return the last row in a CACTI .out file matching the given geometry."""
     match = None
     with open(path) as f:
         reader = csv.DictReader(f, skipinitialspace=True)
         for row in reader:
             try:
-                cap   = int(float(row["Capacity (bytes)"]))
-                assoc = int(float(row["Associativity"]))
-                outw  = int(float(row["Output width (bits)"]))
+                c = int(float(row["Capacity (bytes)"]))
+                a = int(float(row["Associativity"]))
+                w = int(float(row["Output width (bits)"]))
             except (KeyError, ValueError):
                 continue
-            if cap == MATCH_CAPACITY_B and assoc == MATCH_ASSOC and outw == MATCH_OUTPUT_W:
+            if c == cap_b and a == assoc and w == outw:
                 match = row
     if match is None:
         raise RuntimeError(
-            f"No row in {path} matches capacity={MATCH_CAPACITY_B}B "
-            f"assoc={MATCH_ASSOC} outwidth={MATCH_OUTPUT_W}b.\n"
-            f"Run: ./cacti -infile cache_a100_baseline.cfg"
+            f"No row in {path} matches capacity={cap_b}B assoc={assoc} outwidth={outw}b."
         )
     return match
 
-row = load_cacti_out(OUT_FILE)
+# L2 values
+l2 = load_cacti_out(OUT_FILE, L2_MATCH_CAPACITY_B, L2_MATCH_ASSOC, L2_MATCH_OUTPUT_W)
+E_READ_NJ        = float(l2["Dynamic read energy (nJ)"])
+E_WRITE_NJ       = float(l2["Dynamic write energy (nJ)"])
+LEAK_PER_SLICE_W = float(l2["Standby leakage per bank(mW)"]) * 1e-3
+TECH_NM          = float(l2["Tech node (nm)"])
+ACCESS_TIME_NS   = float(l2["Access time (ns)"])
+L2_AREA_MM2      = float(l2["Area (mm2)"])
+LEAK_L2_TOTAL_W  = LEAK_PER_SLICE_W * N_L2_SLICES
 
-E_READ_NJ       = float(row["Dynamic read energy (nJ)"])
-E_WRITE_NJ      = float(row["Dynamic write energy (nJ)"])
-# Standby leakage per bank already combines subthreshold + gate leakage
-LEAK_PER_SLICE_W= float(row["Standby leakage per bank(mW)"]) * 1e-3
-TECH_NM         = float(row["Tech node (nm)"])
-ACCESS_TIME_NS  = float(row["Access time (ns)"])
-AREA_MM2        = float(row["Area (mm2)"])
+# L1 values
+l1 = load_cacti_out(L1_OUT_FILE, L1_MATCH_CAPACITY_B, L1_MATCH_ASSOC, L1_MATCH_OUTPUT_W)
+L1_E_READ_NJ     = float(l1["Dynamic read energy (nJ)"])
+L1_E_WRITE_NJ    = float(l1["Dynamic write energy (nJ)"])
+L1_LEAK_PER_SM_W = float(l1["Standby leakage per bank(mW)"]) * 1e-3
+L1_AREA_MM2      = float(l1["Area (mm2)"])
+LEAK_L1_TOTAL_W  = L1_LEAK_PER_SM_W * N_L1_SMS
 
-LEAK_TOTAL_W    = LEAK_PER_SLICE_W * N_SLICES
+# Keep legacy alias for header display
+LEAK_TOTAL_W = LEAK_L2_TOTAL_W
+AREA_MM2     = L2_AREA_MM2
 
 # ---------------------------------------------------------------------------
 STATS_DIR = Path("/home/cory/accel-sim-framework/sim_run_12.8/"
@@ -111,23 +123,35 @@ def load_csv(path):
         return list(csv.DictReader(f))
 
 def workload_power(rows):
-    total_cycles = total_reads = total_writes = 0.0
+    total_cycles  = 0.0
+    l2_reads = l2_writes = 0.0
+    l1_reads = l1_writes = 0.0
     for row in rows:
         total_cycles += safe_float(row["gpu_tot_sim_cycle"])
-        total_reads  += safe_float(row["L2_read_total_access"])
-        total_writes += safe_float(row["L2_write_total_access"])
+        l2_reads     += safe_float(row["L2_read_total_access"])
+        l2_writes    += safe_float(row["L2_write_total_access"])
+        l1_reads     += safe_float(row["L1_read_total_access"])
+        l1_writes    += safe_float(row["L1_write_total_access"])
 
     time_s = total_cycles / CLOCK_HZ
-    energy_J = (total_reads * E_READ_NJ + total_writes * E_WRITE_NJ) * 1e-9
-    dyn_W    = energy_J / time_s if time_s > 0 else 0.0
+
+    l2_energy_J = (l2_reads * E_READ_NJ    + l2_writes * E_WRITE_NJ)    * 1e-9
+    l1_energy_J = (l1_reads * L1_E_READ_NJ + l1_writes * L1_E_WRITE_NJ) * 1e-9
+
+    l2_dyn_W = l2_energy_J / time_s if time_s > 0 else 0.0
+    l1_dyn_W = l1_energy_J / time_s if time_s > 0 else 0.0
 
     return {
         "total_cycles": total_cycles,
-        "total_reads":  total_reads,
-        "total_writes": total_writes,
-        "dyn_W":        dyn_W,
-        "leak_W":       LEAK_TOTAL_W,
-        "total_W":      dyn_W + LEAK_TOTAL_W,
+        "l2_reads":     l2_reads,
+        "l2_writes":    l2_writes,
+        "l1_reads":     l1_reads,
+        "l1_writes":    l1_writes,
+        "l2_dyn_W":     l2_dyn_W,
+        "l1_dyn_W":     l1_dyn_W,
+        "l2_leak_W":    LEAK_L2_TOTAL_W,
+        "l1_leak_W":    LEAK_L1_TOTAL_W,
+        "total_W":      l2_dyn_W + l1_dyn_W + LEAK_L2_TOTAL_W + LEAK_L1_TOTAL_W,
     }
 
 # ---------------------------------------------------------------------------
@@ -138,38 +162,48 @@ for model, dataset in WORKLOADS:
     tag  = f"{model}_{dataset}"
     base = workload_power(load_csv(STATS_DIR / f"baseline_{tag}_converted.csv"))
     ncc  = workload_power(load_csv(STATS_DIR / f"ncc_fp3_{tag}_converted.csv"))
-    ncc_total_W = ncc["total_W"] + NCC_DYN_W + NCC_LEAK_W
+
+    base_full_W = base["total_W"]
+    ncc_full_W  = ncc["total_W"] + NCC_DYN_W + NCC_LEAK_W
+
     results.append({
-        "workload":            tag,
-        # baseline power
-        "base_reads":          base["total_reads"],
-        "base_writes":         base["total_writes"],
-        "base_cycles":         base["total_cycles"],
-        "base_dyn_W":          base["dyn_W"],
-        "base_leak_W":         base["leak_W"],
-        "base_total_W":        base["total_W"],
-        # baseline area
-        "l2_slice_area_mm2":   AREA_MM2,
-        "l2_total_area_mm2":   AREA_MM2 * N_SLICES,
-        # ncc power
-        "ncc_reads":           ncc["total_reads"],
-        "ncc_writes":          ncc["total_writes"],
-        "ncc_cycles":          ncc["total_cycles"],
-        "ncc_l2_dyn_W":        ncc["dyn_W"],
-        "ncc_l2_leak_W":       ncc["leak_W"],
-        "ncc_l2_total_W":      ncc["total_W"],
-        "ncc_hw_dyn_W":        NCC_DYN_W,
-        "ncc_hw_leak_W":       NCC_LEAK_W,
-        # ncc area
-        "ncc_unit_area_mm2":   NCC_UNIT_AREA_MM2,
-        "ncc_total_area_mm2":  NCC_TOTAL_AREA_MM2,
-        "system_total_area_mm2": AREA_MM2 * N_SLICES + NCC_TOTAL_AREA_MM2,
-        # full system totals (all components combined)
-        "base_full_total_W":   base["total_W"],
-        "ncc_full_total_W":    ncc_total_W,
+        "workload":              tag,
+        # baseline
+        "base_l2_reads":         base["l2_reads"],
+        "base_l2_writes":        base["l2_writes"],
+        "base_l1_reads":         base["l1_reads"],
+        "base_l1_writes":        base["l1_writes"],
+        "base_cycles":           base["total_cycles"],
+        "base_l1_dyn_W":         base["l1_dyn_W"],
+        "base_l2_dyn_W":         base["l2_dyn_W"],
+        "base_l1_leak_W":        base["l1_leak_W"],
+        "base_l2_leak_W":        base["l2_leak_W"],
+        "base_full_total_W":     base_full_W,
+        # ncc
+        "ncc_l2_reads":          ncc["l2_reads"],
+        "ncc_l2_writes":         ncc["l2_writes"],
+        "ncc_l1_reads":          ncc["l1_reads"],
+        "ncc_l1_writes":         ncc["l1_writes"],
+        "ncc_cycles":            ncc["total_cycles"],
+        "ncc_l1_dyn_W":          ncc["l1_dyn_W"],
+        "ncc_l2_dyn_W":          ncc["l2_dyn_W"],
+        "ncc_l1_leak_W":         ncc["l1_leak_W"],
+        "ncc_l2_leak_W":         ncc["l2_leak_W"],
+        "ncc_hw_dyn_W":          NCC_DYN_W,
+        "ncc_hw_leak_W":         NCC_LEAK_W,
+        "ncc_full_total_W":      ncc_full_W,
+        # area
+        "l1_sm_area_mm2":        L1_AREA_MM2,
+        "l1_total_area_mm2":     L1_AREA_MM2 * N_L1_SMS,
+        "l2_slice_area_mm2":     L2_AREA_MM2,
+        "l2_total_area_mm2":     L2_AREA_MM2 * N_L2_SLICES,
+        "ncc_unit_area_mm2":     NCC_UNIT_AREA_MM2,
+        "ncc_total_area_mm2":    NCC_TOTAL_AREA_MM2,
+        "system_total_area_mm2": L1_AREA_MM2 * N_L1_SMS + L2_AREA_MM2 * N_L2_SLICES + NCC_TOTAL_AREA_MM2,
         # deltas
-        "delta_dyn_W":         ncc["dyn_W"] - base["dyn_W"],
-        "delta_full_total_W":  ncc_total_W  - base["total_W"],
+        "delta_l1_dyn_W":        ncc["l1_dyn_W"] - base["l1_dyn_W"],
+        "delta_l2_dyn_W":        ncc["l2_dyn_W"] - base["l2_dyn_W"],
+        "delta_full_total_W":    ncc_full_W - base_full_W,
     })
 
 # ---------------------------------------------------------------------------
@@ -183,54 +217,55 @@ def emit(*args, **kwargs):
 
 W = 100
 emit("=" * W)
-emit(f"  CACTI .out source : {OUT_FILE}")
-emit(f"  Technology        : {TECH_NM:.0f} nm    "
-     f"Access time: {ACCESS_TIME_NS:.3f} ns    "
-     f"Area/slice: {AREA_MM2:.4f} mm²  ({AREA_MM2*N_SLICES:.2f} mm² total)")
-emit(f"  E_read = {E_READ_NJ} nJ/access    "
-     f"E_write = {E_WRITE_NJ} nJ/access    "
-     f"Leakage/slice = {LEAK_PER_SLICE_W*1e3:.3f} mW  "
-     f"({LEAK_TOTAL_W:.3f} W total)")
-emit(f"  Clock: {CLOCK_HZ/1e9:.2f} GHz    Slices: {N_SLICES}")
+emit(f"  Technology : {TECH_NM:.0f} nm    Clock: {CLOCK_HZ/1e9:.2f} GHz")
+emit(f"  L2 .out    : {OUT_FILE}")
+emit(f"    E_read={E_READ_NJ} nJ  E_write={E_WRITE_NJ} nJ  "
+     f"Leak/slice={LEAK_PER_SLICE_W*1e3:.3f} mW  "
+     f"({LEAK_L2_TOTAL_W:.3f} W x{N_L2_SLICES})  Area/slice={L2_AREA_MM2:.4f} mm²")
+emit(f"  L1 .out    : {L1_OUT_FILE}")
+emit(f"    E_read={L1_E_READ_NJ} nJ  E_write={L1_E_WRITE_NJ} nJ  "
+     f"Leak/SM={L1_LEAK_PER_SM_W*1e3:.3f} mW  "
+     f"({LEAK_L1_TOTAL_W:.3f} W x{N_L1_SMS})  Area/SM={L1_AREA_MM2:.4f} mm²")
 emit("=" * W)
 
-FMT = "{:<22} {:>8} {:>12} {:>12} {:>10} {:>10} {:>10} {:>10} {:>12}"
+FMT = "{:<22} {:>8} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>10} {:>12}"
 emit(FMT.format(
     "Workload", "Config",
-    "L2 reads", "L2 writes", "Cycles",
-    "L2 Dyn (W)", "Leak (W)", "NCC HW (W)", "FULL TOT (W)"
+    "L1 Dyn(W)", "L2 Dyn(W)", "L1 Lk(W)", "L2 Lk(W)",
+    "NCC Dyn(W)", "NCC Lk(W)", "Cycles", "FULL TOT(W)"
 ))
 emit("-" * W)
 
 for r in results:
     emit(FMT.format(
         r["workload"], "baseline",
-        f"{r['base_reads']:.0f}", f"{r['base_writes']:.0f}",
+        f"{r['base_l1_dyn_W']:.4f}", f"{r['base_l2_dyn_W']:.4f}",
+        f"{r['base_l1_leak_W']:.3f}", f"{r['base_l2_leak_W']:.3f}",
+        "—", "—",
         f"{r['base_cycles']:.0f}",
-        f"{r['base_dyn_W']:.4f}", f"{r['base_leak_W']:.3f}", "—",
         f"{r['base_full_total_W']:.3f}"
     ))
-    ncc_hw_total = r["ncc_hw_dyn_W"] + r["ncc_hw_leak_W"]
     emit(FMT.format(
         "", "ncc_fp3",
-        f"{r['ncc_reads']:.0f}", f"{r['ncc_writes']:.0f}",
+        f"{r['ncc_l1_dyn_W']:.4f}", f"{r['ncc_l2_dyn_W']:.4f}",
+        f"{r['ncc_l1_leak_W']:.3f}", f"{r['ncc_l2_leak_W']:.3f}",
+        f"{r['ncc_hw_dyn_W']:.4f}", f"{r['ncc_hw_leak_W']:.4f}",
         f"{r['ncc_cycles']:.0f}",
-        f"{r['ncc_l2_dyn_W']:.4f}", f"{r['ncc_l2_leak_W']:.3f}",
-        f"{ncc_hw_total:.4f}",
         f"{r['ncc_full_total_W']:.3f}"
     ))
     emit(FMT.format(
-        "", "delta", "", "", "",
-        f"{r['delta_dyn_W']:+.4f}", "0.000", "—",
+        "", "delta",
+        f"{r['delta_l1_dyn_W']:+.4f}", f"{r['delta_l2_dyn_W']:+.4f}",
+        "0.000", "0.000", "—", "—", "",
         f"{r['delta_full_total_W']:+.3f}"
     ))
     emit()
 
 emit("=" * W)
-emit(f"  NCC hardware overhead (80 units x 32 FMAs, alpha=0.054) — not in .out file:")
-emit(f"    Dynamic : {NCC_DYN_W*1e3:.2f} mW")
-emit(f"    Leakage : {NCC_LEAK_W*1e3:.2f} mW")
-emit(f"    Total   : {(NCC_DYN_W+NCC_LEAK_W)*1e3:.2f} mW")
+emit(f"  NCC hardware overhead (80 units x 32 FMAs, alpha=0.054) — from ncc.cc stdout:")
+emit(f"    Dynamic : {NCC_DYN_W*1e3:.2f} mW    Leakage : {NCC_LEAK_W*1e3:.2f} mW    Total : {(NCC_DYN_W+NCC_LEAK_W)*1e3:.2f} mW")
+emit(f"  L1 leakage (all 108 SMs, always-on): {LEAK_L1_TOTAL_W:.3f} W")
+emit(f"  L2 leakage (all  80 slices, always-on): {LEAK_L2_TOTAL_W:.3f} W")
 emit("=" * W)
 
 # ---------------------------------------------------------------------------
@@ -247,18 +282,19 @@ CSV_OUT = SCRIPT_DIR / "power_results.csv"
 CSV_FIELDS = [
     "workload",
     # baseline power
-    "base_reads", "base_writes", "base_cycles",
-    "base_dyn_W", "base_leak_W", "base_total_W", "base_full_total_W",
-    # baseline area
-    "l2_slice_area_mm2", "l2_total_area_mm2",
+    "base_l2_reads", "base_l2_writes", "base_l1_reads", "base_l1_writes", "base_cycles",
+    "base_l1_dyn_W", "base_l2_dyn_W", "base_l1_leak_W", "base_l2_leak_W",
+    "base_full_total_W",
     # ncc power
-    "ncc_reads", "ncc_writes", "ncc_cycles",
-    "ncc_l2_dyn_W", "ncc_l2_leak_W", "ncc_l2_total_W",
+    "ncc_l2_reads", "ncc_l2_writes", "ncc_l1_reads", "ncc_l1_writes", "ncc_cycles",
+    "ncc_l1_dyn_W", "ncc_l2_dyn_W", "ncc_l1_leak_W", "ncc_l2_leak_W",
     "ncc_hw_dyn_W", "ncc_hw_leak_W", "ncc_full_total_W",
-    # ncc area
+    # area
+    "l1_sm_area_mm2", "l1_total_area_mm2",
+    "l2_slice_area_mm2", "l2_total_area_mm2",
     "ncc_unit_area_mm2", "ncc_total_area_mm2", "system_total_area_mm2",
     # deltas
-    "delta_dyn_W", "delta_full_total_W",
+    "delta_l1_dyn_W", "delta_l2_dyn_W", "delta_full_total_W",
 ]
 with open(CSV_OUT, "w", newline="") as f:
     w = csv.DictWriter(f, fieldnames=CSV_FIELDS)
