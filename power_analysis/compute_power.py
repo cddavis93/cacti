@@ -160,14 +160,16 @@ for model, dataset in WORKLOADS:
         "ncc_l2_total_W":      ncc["total_W"],
         "ncc_hw_dyn_W":        NCC_DYN_W,
         "ncc_hw_leak_W":       NCC_LEAK_W,
-        "ncc_total_W":         ncc_total_W,
         # ncc area
         "ncc_unit_area_mm2":   NCC_UNIT_AREA_MM2,
         "ncc_total_area_mm2":  NCC_TOTAL_AREA_MM2,
         "system_total_area_mm2": AREA_MM2 * N_SLICES + NCC_TOTAL_AREA_MM2,
+        # full system totals (all components combined)
+        "base_full_total_W":   base["total_W"],
+        "ncc_full_total_W":    ncc_total_W,
         # deltas
         "delta_dyn_W":         ncc["dyn_W"] - base["dyn_W"],
-        "delta_total_W":       ncc_total_W  - base["total_W"],
+        "delta_full_total_W":  ncc_total_W  - base["total_W"],
     })
 
 # ---------------------------------------------------------------------------
@@ -192,12 +194,11 @@ emit(f"  E_read = {E_READ_NJ} nJ/access    "
 emit(f"  Clock: {CLOCK_HZ/1e9:.2f} GHz    Slices: {N_SLICES}")
 emit("=" * W)
 
-FMT = "{:<22} {:>8} {:>12} {:>12} {:>10} {:>10} {:>10} {:>10} | {:>10} {:>10} {:>10}"
+FMT = "{:<22} {:>8} {:>12} {:>12} {:>10} {:>10} {:>10} {:>10} {:>12}"
 emit(FMT.format(
     "Workload", "Config",
     "L2 reads", "L2 writes", "Cycles",
-    "Dyn (W)", "Leak (W)", "Total (W)",
-    "+NCC dyn", "+NCC lk", "NCC tot (W)"
+    "L2 Dyn (W)", "Leak (W)", "NCC HW (W)", "FULL TOT (W)"
 ))
 emit("-" * W)
 
@@ -206,20 +207,22 @@ for r in results:
         r["workload"], "baseline",
         f"{r['base_reads']:.0f}", f"{r['base_writes']:.0f}",
         f"{r['base_cycles']:.0f}",
-        f"{r['base_dyn_W']:.4f}", f"{r['base_leak_W']:.3f}", f"{r['base_total_W']:.3f}",
-        "", "", ""
+        f"{r['base_dyn_W']:.4f}", f"{r['base_leak_W']:.3f}", "—",
+        f"{r['base_full_total_W']:.3f}"
     ))
+    ncc_hw_total = r["ncc_hw_dyn_W"] + r["ncc_hw_leak_W"]
     emit(FMT.format(
         "", "ncc_fp3",
         f"{r['ncc_reads']:.0f}", f"{r['ncc_writes']:.0f}",
         f"{r['ncc_cycles']:.0f}",
-        f"{r['ncc_l2_dyn_W']:.4f}", f"{r['ncc_l2_leak_W']:.3f}", f"{r['ncc_l2_total_W']:.3f}",
-        f"{r['ncc_hw_dyn_W']:.4f}", f"{r['ncc_hw_leak_W']:.4f}", f"{r['ncc_total_W']:.3f}"
+        f"{r['ncc_l2_dyn_W']:.4f}", f"{r['ncc_l2_leak_W']:.3f}",
+        f"{ncc_hw_total:.4f}",
+        f"{r['ncc_full_total_W']:.3f}"
     ))
     emit(FMT.format(
         "", "delta", "", "", "",
-        f"{r['delta_dyn_W']:+.4f}", "0.000", f"{r['delta_total_W']:+.3f}",
-        "", "", ""
+        f"{r['delta_dyn_W']:+.4f}", "0.000", "—",
+        f"{r['delta_full_total_W']:+.3f}"
     ))
     emit()
 
@@ -243,17 +246,19 @@ print(f"\n  Text output saved to: {TXT_OUT}")
 CSV_OUT = SCRIPT_DIR / "power_results.csv"
 CSV_FIELDS = [
     "workload",
-    # baseline
+    # baseline power
     "base_reads", "base_writes", "base_cycles",
-    "base_dyn_W", "base_leak_W", "base_total_W",
+    "base_dyn_W", "base_leak_W", "base_total_W", "base_full_total_W",
+    # baseline area
     "l2_slice_area_mm2", "l2_total_area_mm2",
-    # ncc
+    # ncc power
     "ncc_reads", "ncc_writes", "ncc_cycles",
     "ncc_l2_dyn_W", "ncc_l2_leak_W", "ncc_l2_total_W",
-    "ncc_hw_dyn_W", "ncc_hw_leak_W", "ncc_total_W",
+    "ncc_hw_dyn_W", "ncc_hw_leak_W", "ncc_full_total_W",
+    # ncc area
     "ncc_unit_area_mm2", "ncc_total_area_mm2", "system_total_area_mm2",
     # deltas
-    "delta_dyn_W", "delta_total_W",
+    "delta_dyn_W", "delta_full_total_W",
 ]
 with open(CSV_OUT, "w", newline="") as f:
     w = csv.DictWriter(f, fieldnames=CSV_FIELDS)
