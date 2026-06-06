@@ -117,8 +117,9 @@ LEAK_L1_TOTAL_W  = L1_LEAK_PER_SM_W * N_L1_SMS
 # ---------------------------------------------------------------------------
 def load_grid_block(stats_ctx_path):
     """
-    Returns dict: {func_name: [(gx,gy,gz,bx,by,bz), ...]} in launch order.
+    Returns dict: {func_name: [(kernel_id, gx,gy,gz, bx,by,bz), ...]} in launch order.
     Invocation N of func maps to list index N.
+    kernel_id is the integer extracted from 'kernel-N-ctx...' in column 0.
     """
     lookup = {}
     with open(stats_ctx_path) as f:
@@ -127,13 +128,15 @@ def load_grid_block(stats_ctx_path):
         for row in reader:
             if len(row) < 9:
                 continue
-            func = row[1].strip()
+            kid_raw = row[0].strip()   # e.g. "kernel-17-ctx_0xc845610.trace.xz"
+            func    = row[1].strip()
             try:
+                kid = int(kid_raw.split("-")[1])
                 gx, gy, gz = int(row[2]), int(row[3]), int(row[4])
                 bx, by, bz = int(row[6]), int(row[7]), int(row[8])
             except (ValueError, IndexError):
                 continue
-            lookup.setdefault(func, []).append((gx, gy, gz, bx, by, bz))
+            lookup.setdefault(func, []).append((kid, gx, gy, gz, bx, by, bz))
     return lookup
 
 # ---------------------------------------------------------------------------
@@ -184,7 +187,7 @@ EMPTY = {k: 0.0 for k in ["cycles","l1_reads","l1_writes","l2_reads","l2_writes"
 NO_SHAPE = (0, 0, 0, 0, 0, 0)
 
 CSV_FIELDS = [
-    "kernel_type", "invocation_idx",
+    "kernel_type", "kernel_id", "invocation_idx",
     "grid_x", "grid_y", "grid_z", "total_blocks",
     "block_x", "block_y", "block_z", "total_threads",
     "base_cycles", "base_l1_reads", "base_l1_writes",
@@ -203,7 +206,7 @@ CSV_FIELDS = [
 # Text table helpers
 # ---------------------------------------------------------------------------
 HEADER_W = 200
-FMT = ("{:<45} {:>4} {:>5} {:>5} {:>5} {:>8} {:>7} {:>7} {:>7} {:>9}"
+FMT = ("{:<45} {:>4} {:>6} {:>5} {:>5} {:>5} {:>8} {:>7} {:>7} {:>7} {:>9}"
        " {:>8} {:>10} {:>10} {:>10} {:>10}"
        " {:>10} {:>10} {:>10} {:>10} {:>12}"
        " {:>10} {:>10} {:>10} {:>12}")
@@ -217,7 +220,7 @@ def txt_header(tag):
              f"  NCC HW overhead (prorated): dyn={NCC_DYN_W*1e3:.2f} mW  leak={NCC_LEAK_W*1e3:.2f} mW",
              "=" * HEADER_W,
              FMT.format(
-                 "Kernel type", "inv",
+                 "Kernel type", "inv", "kid",
                  "gx", "gy", "gz", "blocks", "bx", "by", "bz", "threads",
                  "Config",
                  "L1 reads", "L1 writes", "L2 reads", "L2 writes",
@@ -267,8 +270,9 @@ for model, dataset in WORKLOADS:
         # Grid/block from stats_ctx: inv_idx-th launch of this function
         launches = gb_lookup.get(func, [])
         if inv_idx < len(launches):
-            gx, gy, gz, bx, by, bz = launches[inv_idx]
+            kid, gx, gy, gz, bx, by, bz = launches[inv_idx]
         else:
+            kid = 0
             gx, gy, gz, bx, by, bz = NO_SHAPE
 
         b = kernel_power(base_rows[kname], total_base_cycles) if kname in base_rows else dict(EMPTY)
@@ -281,6 +285,7 @@ for model, dataset in WORKLOADS:
 
         entries.append({
             "kernel_type":      func,
+            "kernel_id":        kid,
             "invocation_idx":   inv_idx,
             "grid_x": gx, "grid_y": gy, "grid_z": gz,
             "total_blocks":     gx * gy * gz,
@@ -338,17 +343,19 @@ for model, dataset in WORKLOADS:
 
         def row_fmt(config, lr, lw, zr, zw, l1d, l2d, l1l, l2l, tot,
                     nd=None, nl=None, nt=None, delta=None):
+            show = config == "baseline"
             return FMT.format(
-                kshort if config == "baseline" else "",
-                e["invocation_idx"] if config == "baseline" else "",
-                e["grid_x"] if config == "baseline" else "",
-                e["grid_y"] if config == "baseline" else "",
-                e["grid_z"] if config == "baseline" else "",
-                e["total_blocks"] if config == "baseline" else "",
-                e["block_x"] if config == "baseline" else "",
-                e["block_y"] if config == "baseline" else "",
-                e["block_z"] if config == "baseline" else "",
-                e["total_threads"] if config == "baseline" else "",
+                kshort if show else "",
+                e["invocation_idx"] if show else "",
+                e["kernel_id"] if show else "",
+                e["grid_x"] if show else "",
+                e["grid_y"] if show else "",
+                e["grid_z"] if show else "",
+                e["total_blocks"] if show else "",
+                e["block_x"] if show else "",
+                e["block_y"] if show else "",
+                e["block_z"] if show else "",
+                e["total_threads"] if show else "",
                 config,
                 f"{lr:.0f}", f"{lw:.0f}", f"{zr:.0f}", f"{zw:.0f}",
                 f"{l1d:.4f}", f"{l2d:.4f}", f"{l1l:.4f}", f"{l2l:.4f}",
