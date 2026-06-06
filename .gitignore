@@ -1,0 +1,4 @@
+cacti
+obj_dbg/
+obj_opt/
+*.o
