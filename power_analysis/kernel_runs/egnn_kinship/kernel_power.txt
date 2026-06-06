@@ -400,9 +400,9 @@ _ZN6thrust8cuda_cub4core13_kernel_agentINS0_12__merge_s baseline           73   
                                                          ncc_fp3            0            0            0            0     0.0000     0.0000     0.0000     0.0000     0.0000     0.0000       0.0000
                                                            delta          -73          -41          -41          -41    -0.0012    -0.0044          —          —          —          —      -0.5718
 
-_ZN6thrust8cuda_cub4core13_kernel_agentINS0_14__paralle baseline            0      -203056            0      -203056    -9.1533   -45.0430     0.0372     0.1046          —          —     -54.0545
+_ZN6thrust8cuda_cub4core13_kernel_agentINS0_14__paralle baseline       158138        69749       143004        69749     9.8750    45.1855     0.0372     0.1046          —          —      55.2024
                                                          ncc_fp3            0            0            0            0     0.0000     0.0000     0.0000     0.0000     0.0000     0.0000       0.0000
-                                                           delta           +0      +203056           +0      +203056    +9.1533   +45.0430          —          —          —          —     +54.0545
+                                                           delta      -158138       -69749      -143004       -69749    -9.8750   -45.1855          —          —          —          —     -55.2024
 
 _ZN2at6native18elementwise_kernelILi512ELi1EZNS0_16gpu_ baseline            0            0            0            0     0.0000     0.0000     0.0000     0.0000          —          —       0.0000
                                                          ncc_fp3            0            0            0            0     0.0000     0.0000     0.0874     0.2456     0.0005     0.0030       0.3367
