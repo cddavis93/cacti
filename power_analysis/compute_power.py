@@ -35,8 +35,10 @@ CLOCK_HZ   = 1.41e9  # A100 L2 clock (Hz)
 
 # NCC hardware additions — from CACTI NCC model stdout (ncc.cc output).
 # Not written to the .out file; kept here as verified constants.
-NCC_DYN_W  = 0.0282766   # W  NCC dynamic power  (80 units, alpha=0.054)
-NCC_LEAK_W = 0.157266    # W  NCC leakage power  (80 units)
+NCC_DYN_W          = 0.0282766   # W    NCC dynamic power  (80 units, alpha=0.054)
+NCC_LEAK_W         = 0.157266    # W    NCC leakage power  (80 units)
+NCC_UNIT_AREA_MM2  = 0.0758596   # mm²  NCC area per unit  (32 FMAs @ 22nm)
+NCC_TOTAL_AREA_MM2 = 6.06877     # mm²  NCC area total     (80 units)
 
 # ---------------------------------------------------------------------------
 # Load CACTI .out file and extract E_read, E_write, leakage
@@ -138,24 +140,34 @@ for model, dataset in WORKLOADS:
     ncc  = workload_power(load_csv(STATS_DIR / f"ncc_fp3_{tag}_converted.csv"))
     ncc_total_W = ncc["total_W"] + NCC_DYN_W + NCC_LEAK_W
     results.append({
-        "workload":        tag,
-        "base_reads":      base["total_reads"],
-        "base_writes":     base["total_writes"],
-        "base_cycles":     base["total_cycles"],
-        "base_dyn_W":      base["dyn_W"],
-        "base_leak_W":     base["leak_W"],
-        "base_total_W":    base["total_W"],
-        "ncc_reads":       ncc["total_reads"],
-        "ncc_writes":      ncc["total_writes"],
-        "ncc_cycles":      ncc["total_cycles"],
-        "ncc_l2_dyn_W":    ncc["dyn_W"],
-        "ncc_l2_leak_W":   ncc["leak_W"],
-        "ncc_l2_total_W":  ncc["total_W"],
-        "ncc_hw_dyn_W":    NCC_DYN_W,
-        "ncc_hw_leak_W":   NCC_LEAK_W,
-        "ncc_total_W":     ncc_total_W,
-        "delta_dyn_W":     ncc["dyn_W"] - base["dyn_W"],
-        "delta_total_W":   ncc_total_W  - base["total_W"],
+        "workload":            tag,
+        # baseline power
+        "base_reads":          base["total_reads"],
+        "base_writes":         base["total_writes"],
+        "base_cycles":         base["total_cycles"],
+        "base_dyn_W":          base["dyn_W"],
+        "base_leak_W":         base["leak_W"],
+        "base_total_W":        base["total_W"],
+        # baseline area
+        "l2_slice_area_mm2":   AREA_MM2,
+        "l2_total_area_mm2":   AREA_MM2 * N_SLICES,
+        # ncc power
+        "ncc_reads":           ncc["total_reads"],
+        "ncc_writes":          ncc["total_writes"],
+        "ncc_cycles":          ncc["total_cycles"],
+        "ncc_l2_dyn_W":        ncc["dyn_W"],
+        "ncc_l2_leak_W":       ncc["leak_W"],
+        "ncc_l2_total_W":      ncc["total_W"],
+        "ncc_hw_dyn_W":        NCC_DYN_W,
+        "ncc_hw_leak_W":       NCC_LEAK_W,
+        "ncc_total_W":         ncc_total_W,
+        # ncc area
+        "ncc_unit_area_mm2":   NCC_UNIT_AREA_MM2,
+        "ncc_total_area_mm2":  NCC_TOTAL_AREA_MM2,
+        "system_total_area_mm2": AREA_MM2 * N_SLICES + NCC_TOTAL_AREA_MM2,
+        # deltas
+        "delta_dyn_W":         ncc["dyn_W"] - base["dyn_W"],
+        "delta_total_W":       ncc_total_W  - base["total_W"],
     })
 
 # ---------------------------------------------------------------------------
@@ -231,11 +243,16 @@ print(f"\n  Text output saved to: {TXT_OUT}")
 CSV_OUT = SCRIPT_DIR / "power_results.csv"
 CSV_FIELDS = [
     "workload",
+    # baseline
     "base_reads", "base_writes", "base_cycles",
     "base_dyn_W", "base_leak_W", "base_total_W",
+    "l2_slice_area_mm2", "l2_total_area_mm2",
+    # ncc
     "ncc_reads", "ncc_writes", "ncc_cycles",
     "ncc_l2_dyn_W", "ncc_l2_leak_W", "ncc_l2_total_W",
     "ncc_hw_dyn_W", "ncc_hw_leak_W", "ncc_total_W",
+    "ncc_unit_area_mm2", "ncc_total_area_mm2", "system_total_area_mm2",
+    # deltas
     "delta_dyn_W", "delta_total_W",
 ]
 with open(CSV_OUT, "w", newline="") as f:
