@@ -357,9 +357,14 @@ for model, dataset in WORKLOADS:
                 e["block_z"] if show else "",
                 e["total_threads"] if show else "",
                 config,
-                f"{lr:.0f}", f"{lw:.0f}", f"{zr:.0f}", f"{zw:.0f}",
-                f"{l1d:.4f}", f"{l2d:.4f}", f"{l1l:.4f}", f"{l2l:.4f}",
-                f"{tot:.4f}",
+                f"{lr:+.0f}" if config == "delta" else f"{lr:.0f}",
+                f"{lw:+.0f}" if config == "delta" else f"{lw:.0f}",
+                f"{zr:+.0f}" if config == "delta" else f"{zr:.0f}",
+                f"{zw:+.0f}" if config == "delta" else f"{zw:.0f}",
+                f"{l1d:+.4f}" if config == "delta" else f"{l1d:.4f}",
+                f"{l2d:+.4f}" if config == "delta" else f"{l2d:.4f}",
+                f"{l1l:.4f}", f"{l2l:.4f}",
+                f"{tot:+.4f}" if config == "delta" else f"{tot:.4f}",
                 f"{nd:.4f}" if nd is not None else "—",
                 f"{nl:.4f}" if nl is not None else "—",
                 f"{nt:.4f}" if nt is not None else "—",
@@ -381,6 +386,15 @@ for model, dataset in WORKLOADS:
             e["ncc_full_total_W"],
             e["ncc_hw_dyn_W"], e["ncc_hw_leak_W"],
             e["ncc_full_total_W"],
+            e["delta_full_total_W"]))
+        txt_lines.append(row_fmt(
+            "delta",
+            e["ncc_l1_reads"]  - e["base_l1_reads"],
+            e["ncc_l1_writes"] - e["base_l1_writes"],
+            e["ncc_l2_reads"]  - e["base_l2_reads"],
+            e["ncc_l2_writes"] - e["base_l2_writes"],
+            e["delta_l1_dyn_W"], e["delta_l2_dyn_W"],
+            0.0, 0.0,
             e["delta_full_total_W"]))
 
     txt_lines.append("\n" + "=" * HEADER_W)
