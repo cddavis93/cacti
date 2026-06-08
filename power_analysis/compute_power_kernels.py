@@ -199,7 +199,13 @@ CSV_FIELDS = [
     "ncc_l1_dyn_W", "ncc_l2_dyn_W",
     "ncc_l1_leak_W", "ncc_l2_leak_W",
     "ncc_hw_dyn_W", "ncc_hw_leak_W", "ncc_full_total_W",
+    "mix_cycles", "mix_l1_reads", "mix_l1_writes",
+    "mix_l2_reads", "mix_l2_writes",
+    "mix_l1_dyn_W", "mix_l2_dyn_W",
+    "mix_l1_leak_W", "mix_l2_leak_W",
+    "mix_hw_dyn_W", "mix_hw_leak_W", "mix_full_total_W",
     "delta_l1_dyn_W", "delta_l2_dyn_W", "delta_full_total_W",
+    "mix_delta_full_total_W",
 ]
 
 # ---------------------------------------------------------------------------
@@ -283,30 +289,53 @@ for model, dataset in WORKLOADS:
         ncc_full_W    = n["total_W"] + ncc_hw_dyn_W + ncc_hw_leak_W
         delta_full_W  = ncc_full_W - b["total_W"]
 
+        # Mixed: baseline L2 activity + NCC L1 activity + NCC hardware.
+        # Time base = baseline kernel cycles.
+        b_time_s      = b["cycles"] / CLOCK_HZ
+        mix_l1_dyn_W  = (n["l1_reads"] * L1_E_READ_NJ + n["l1_writes"] * L1_E_WRITE_NJ) \
+                        * 1e-9 / b_time_s if b_time_s > 0 else 0.0
+        mix_l2_dyn_W  = b["l2_dyn_W"]
+        mix_frac      = b["cycles"] / total_base_cycles if total_base_cycles > 0 else 0.0
+        mix_hw_dyn_W  = NCC_DYN_W  * (b["cycles"] / total_base_cycles) if total_base_cycles > 0 else 0.0
+        mix_hw_leak_W = NCC_LEAK_W * (b["cycles"] / total_base_cycles) if total_base_cycles > 0 else 0.0
+        mix_l1_leak_W = LEAK_L1_TOTAL_W * mix_frac
+        mix_l2_leak_W = LEAK_L2_TOTAL_W * mix_frac
+        mix_full_W    = mix_l1_dyn_W + mix_l2_dyn_W + mix_l1_leak_W + mix_l2_leak_W \
+                        + mix_hw_dyn_W + mix_hw_leak_W
+
         entries.append({
-            "kernel_type":      func,
-            "kernel_id":        kid,
-            "invocation_idx":   inv_idx,
+            "kernel_type":        func,
+            "kernel_id":          kid,
+            "invocation_idx":     inv_idx,
             "grid_x": gx, "grid_y": gy, "grid_z": gz,
-            "total_blocks":     gx * gy * gz,
+            "total_blocks":       gx * gy * gz,
             "block_x": bx, "block_y": by, "block_z": bz,
-            "total_threads":    bx * by * bz,
-            "base_cycles":      b["cycles"],
-            "base_l1_reads":    b["l1_reads"],  "base_l1_writes":  b["l1_writes"],
-            "base_l2_reads":    b["l2_reads"],  "base_l2_writes":  b["l2_writes"],
-            "base_l1_dyn_W":    b["l1_dyn_W"],  "base_l2_dyn_W":   b["l2_dyn_W"],
-            "base_l1_leak_W":   b["l1_leak_W"], "base_l2_leak_W":  b["l2_leak_W"],
-            "base_full_total_W":b["total_W"],
-            "ncc_cycles":       n["cycles"],
-            "ncc_l1_reads":     n["l1_reads"],  "ncc_l1_writes":   n["l1_writes"],
-            "ncc_l2_reads":     n["l2_reads"],  "ncc_l2_writes":   n["l2_writes"],
-            "ncc_l1_dyn_W":     n["l1_dyn_W"],  "ncc_l2_dyn_W":    n["l2_dyn_W"],
-            "ncc_l1_leak_W":    n["l1_leak_W"], "ncc_l2_leak_W":   n["l2_leak_W"],
-            "ncc_hw_dyn_W":     ncc_hw_dyn_W,   "ncc_hw_leak_W":   ncc_hw_leak_W,
-            "ncc_full_total_W": ncc_full_W,
-            "delta_l1_dyn_W":   n["l1_dyn_W"] - b["l1_dyn_W"],
-            "delta_l2_dyn_W":   n["l2_dyn_W"] - b["l2_dyn_W"],
+            "total_threads":      bx * by * bz,
+            "base_cycles":        b["cycles"],
+            "base_l1_reads":      b["l1_reads"],  "base_l1_writes":  b["l1_writes"],
+            "base_l2_reads":      b["l2_reads"],  "base_l2_writes":  b["l2_writes"],
+            "base_l1_dyn_W":      b["l1_dyn_W"],  "base_l2_dyn_W":   b["l2_dyn_W"],
+            "base_l1_leak_W":     b["l1_leak_W"], "base_l2_leak_W":  b["l2_leak_W"],
+            "base_full_total_W":  b["total_W"],
+            "ncc_cycles":         n["cycles"],
+            "ncc_l1_reads":       n["l1_reads"],  "ncc_l1_writes":   n["l1_writes"],
+            "ncc_l2_reads":       n["l2_reads"],  "ncc_l2_writes":   n["l2_writes"],
+            "ncc_l1_dyn_W":       n["l1_dyn_W"],  "ncc_l2_dyn_W":    n["l2_dyn_W"],
+            "ncc_l1_leak_W":      n["l1_leak_W"], "ncc_l2_leak_W":   n["l2_leak_W"],
+            "ncc_hw_dyn_W":       ncc_hw_dyn_W,   "ncc_hw_leak_W":   ncc_hw_leak_W,
+            "ncc_full_total_W":   ncc_full_W,
+            # mixed
+            "mix_l1_reads":       n["l1_reads"],  "mix_l1_writes":   n["l1_writes"],
+            "mix_l2_reads":       b["l2_reads"],  "mix_l2_writes":   b["l2_writes"],
+            "mix_cycles":         b["cycles"],
+            "mix_l1_dyn_W":       mix_l1_dyn_W,   "mix_l2_dyn_W":    mix_l2_dyn_W,
+            "mix_l1_leak_W":      mix_l1_leak_W,  "mix_l2_leak_W":   mix_l2_leak_W,
+            "mix_hw_dyn_W":       mix_hw_dyn_W,   "mix_hw_leak_W":   mix_hw_leak_W,
+            "mix_full_total_W":   mix_full_W,
+            "delta_l1_dyn_W":     n["l1_dyn_W"] - b["l1_dyn_W"],
+            "delta_l2_dyn_W":     n["l2_dyn_W"] - b["l2_dyn_W"],
             "delta_full_total_W": delta_full_W,
+            "mix_delta_full_total_W": mix_full_W - b["total_W"],
         })
 
     # Sort by kernel_type → (gx,gy,gz,bx,by,bz) → invocation_idx
@@ -387,6 +416,16 @@ for model, dataset in WORKLOADS:
             e["ncc_hw_dyn_W"], e["ncc_hw_leak_W"],
             e["ncc_full_total_W"],
             e["delta_full_total_W"]))
+        txt_lines.append(row_fmt(
+            "mixed",
+            e["mix_l1_reads"], e["mix_l1_writes"],
+            e["mix_l2_reads"], e["mix_l2_writes"],
+            e["mix_l1_dyn_W"], e["mix_l2_dyn_W"],
+            e["mix_l1_leak_W"], e["mix_l2_leak_W"],
+            e["mix_full_total_W"],
+            e["mix_hw_dyn_W"], e["mix_hw_leak_W"],
+            e["mix_full_total_W"],
+            e["mix_delta_full_total_W"]))
         txt_lines.append(row_fmt(
             "delta",
             e["ncc_l1_reads"]  - e["base_l1_reads"],

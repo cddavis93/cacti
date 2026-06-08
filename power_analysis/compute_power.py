@@ -166,6 +166,15 @@ for model, dataset in WORKLOADS:
     base_full_W = base["total_W"]
     ncc_full_W  = ncc["total_W"] + NCC_DYN_W + NCC_LEAK_W
 
+    # Mixed: baseline L2 activity + NCC L1 activity + NCC hardware units.
+    # Time base = baseline cycles so L2 dynamic is unchanged from baseline.
+    base_time_s     = base["total_cycles"] / CLOCK_HZ
+    mix_l1_energy_J = (ncc["l1_reads"] * L1_E_READ_NJ + ncc["l1_writes"] * L1_E_WRITE_NJ) * 1e-9
+    mix_l1_dyn_W    = mix_l1_energy_J / base_time_s if base_time_s > 0 else 0.0
+    mix_l2_dyn_W    = base["l2_dyn_W"]   # baseline L2 accesses over baseline time
+    mix_full_W      = mix_l1_dyn_W + mix_l2_dyn_W + LEAK_L1_TOTAL_W + LEAK_L2_TOTAL_W \
+                      + NCC_DYN_W + NCC_LEAK_W
+
     results.append({
         "workload":              tag,
         # baseline
@@ -200,10 +209,24 @@ for model, dataset in WORKLOADS:
         "ncc_unit_area_mm2":     NCC_UNIT_AREA_MM2,
         "ncc_total_area_mm2":    NCC_TOTAL_AREA_MM2,
         "system_total_area_mm2": L1_AREA_MM2 * N_L1_SMS + L2_AREA_MM2 * N_L2_SLICES + NCC_TOTAL_AREA_MM2,
+        # mixed (baseline L2 + NCC L1 + NCC hardware)
+        "mix_l1_reads":          ncc["l1_reads"],
+        "mix_l1_writes":         ncc["l1_writes"],
+        "mix_l2_reads":          base["l2_reads"],
+        "mix_l2_writes":         base["l2_writes"],
+        "mix_cycles":            base["total_cycles"],
+        "mix_l1_dyn_W":          mix_l1_dyn_W,
+        "mix_l2_dyn_W":          mix_l2_dyn_W,
+        "mix_l1_leak_W":         LEAK_L1_TOTAL_W,
+        "mix_l2_leak_W":         LEAK_L2_TOTAL_W,
+        "mix_hw_dyn_W":          NCC_DYN_W,
+        "mix_hw_leak_W":         NCC_LEAK_W,
+        "mix_full_total_W":      mix_full_W,
         # deltas
         "delta_l1_dyn_W":        ncc["l1_dyn_W"] - base["l1_dyn_W"],
         "delta_l2_dyn_W":        ncc["l2_dyn_W"] - base["l2_dyn_W"],
         "delta_full_total_W":    ncc_full_W - base_full_W,
+        "mix_delta_full_total_W": mix_full_W - base_full_W,
     })
 
 # ---------------------------------------------------------------------------
@@ -257,6 +280,15 @@ for r in results:
         f"{r['ncc_full_total_W']:.3f}"
     ))
     emit(FMT.format(
+        "", "mixed",
+        f"{r['mix_l1_reads']:.0f}", f"{r['mix_l1_writes']:.0f}",
+        f"{r['mix_l2_reads']:.0f}", f"{r['mix_l2_writes']:.0f}",
+        f"{r['mix_l1_dyn_W']:.4f}", f"{r['mix_l2_dyn_W']:.4f}",
+        f"{r['mix_l1_leak_W']:.3f}", f"{r['mix_l2_leak_W']:.3f}",
+        f"{r['mix_hw_dyn_W']:.4f}", f"{r['mix_hw_leak_W']:.4f}",
+        f"{r['mix_full_total_W']:.3f}"
+    ))
+    emit(FMT.format(
         "", "delta",
         f"{r['ncc_l1_reads'] - r['base_l1_reads']:+.0f}",
         f"{r['ncc_l1_writes'] - r['base_l1_writes']:+.0f}",
@@ -265,6 +297,16 @@ for r in results:
         f"{r['delta_l1_dyn_W']:+.4f}", f"{r['delta_l2_dyn_W']:+.4f}",
         "0.000", "0.000", "—", "—",
         f"{r['delta_full_total_W']:+.3f}"
+    ))
+    emit(FMT.format(
+        "", "mix_delta",
+        f"{r['mix_l1_reads'] - r['base_l1_reads']:+.0f}",
+        f"{r['mix_l1_writes'] - r['base_l1_writes']:+.0f}",
+        "0", "0",
+        f"{r['mix_l1_dyn_W'] - r['base_l1_dyn_W']:+.4f}", "0.0000",
+        "0.000", "0.000",
+        f"{r['mix_hw_dyn_W']:.4f}", f"{r['mix_hw_leak_W']:.4f}",
+        f"{r['mix_delta_full_total_W']:+.3f}"
     ))
     emit()
 
@@ -296,12 +338,17 @@ CSV_FIELDS = [
     "ncc_l2_reads", "ncc_l2_writes", "ncc_l1_reads", "ncc_l1_writes", "ncc_cycles",
     "ncc_l1_dyn_W", "ncc_l2_dyn_W", "ncc_l1_leak_W", "ncc_l2_leak_W",
     "ncc_hw_dyn_W", "ncc_hw_leak_W", "ncc_full_total_W",
+    # mixed (baseline L2 + NCC L1 + NCC hardware)
+    "mix_l1_reads", "mix_l1_writes", "mix_l2_reads", "mix_l2_writes", "mix_cycles",
+    "mix_l1_dyn_W", "mix_l2_dyn_W", "mix_l1_leak_W", "mix_l2_leak_W",
+    "mix_hw_dyn_W", "mix_hw_leak_W", "mix_full_total_W",
     # area
     "l1_sm_area_mm2", "l1_total_area_mm2",
     "l2_slice_area_mm2", "l2_total_area_mm2",
     "ncc_unit_area_mm2", "ncc_total_area_mm2", "system_total_area_mm2",
     # deltas
     "delta_l1_dyn_W", "delta_l2_dyn_W", "delta_full_total_W",
+    "mix_delta_full_total_W",
 ]
 with open(CSV_OUT, "w", newline="") as f:
     w = csv.DictWriter(f, fieldnames=CSV_FIELDS)
