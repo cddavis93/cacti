@@ -109,6 +109,9 @@ WORKLOADS = [
     ("gin",   "MUTAG"),
     ("lgcn",  "gowalla"),
     ("lgcn",  "yelp2018"),
+    ("igb",   "gcn_tiny"),
+    ("igb",   "sage_tiny"),
+    ("igb",   "gat_tiny"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -158,7 +161,11 @@ def workload_power(rows):
 # Collect results
 # ---------------------------------------------------------------------------
 results = []
-for model, dataset in WORKLOADS:
+# optional CLI workload filter, e.g. `compute_power.py igb` or `... igb_gat_tiny`
+_wf = [a for a in sys.argv[1:] if not Path(a).exists()]
+_selected = [wd for wd in WORKLOADS
+             if not _wf or wd[0] in _wf or f"{wd[0]}_{wd[1]}" in _wf]
+for model, dataset in _selected:
     tag  = f"{model}_{dataset}"
     base = workload_power(load_csv(STATS_DIR / f"baseline_{tag}_converted.csv"))
     ncc  = workload_power(load_csv(STATS_DIR / f"ncc_fp3_{tag}_converted.csv"))

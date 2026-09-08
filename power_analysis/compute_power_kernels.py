@@ -48,7 +48,13 @@ NCC_LEAK_W = 0.157266
 SCRIPT_DIR  = Path(__file__).parent
 CACTI_DIR   = SCRIPT_DIR.parent
 CONFIGS_DIR = CACTI_DIR / "configs"
-OUT_FILE    = Path(sys.argv[1]) if len(sys.argv) > 1 \
+
+# CLI args: an existing path -> L2 cacti .out to use; any other token(s) ->
+# workload filter (e.g. `igb`, `igb_gcn_tiny`, `egnn gin`). No filter = all.
+_ARGV = sys.argv[1:]
+_PATH_ARGS = [a for a in _ARGV if Path(a).exists()]
+_WL_FILTER = [a for a in _ARGV if not Path(a).exists()]
+OUT_FILE    = Path(_PATH_ARGS[0]) if _PATH_ARGS \
               else CONFIGS_DIR / "cache_a100_baseline.cfg.out"
 L1_OUT_FILE = CONFIGS_DIR / "cache_a100_l1.cfg.out"
 
@@ -58,6 +64,9 @@ STATS_DIR   = Path("/home/cory/accel-sim-framework/sim_run_12.8/"
 TRACE_BASE  = Path("/home/cory/accel-sim-framework/hw_run/traces/dissertation_traces")
 
 # Mapping: combo tag → stats_ctx file path (relative to TRACE_BASE)
+_IGB_ARGS = ("dataset_size_tiny___num_layers_2___hidden_channels_128___fan_out_5_10"
+            "___batch_size_256___epochs_4___max_iters_5")
+
 STATS_CTX = {
     "egnn_cora":     TRACE_BASE / "EGNN/hashed_args_ee9575be706211aa3933a8cc5d8ed1b8/traces/stats_ctx_0x3ce54990",
     "egnn_kinship":  TRACE_BASE / "EGNN/hashed_args_1032ffa1fa7482d93b95a6e725e5618a/traces/stats_ctx_0xc845610",
@@ -65,6 +74,9 @@ STATS_CTX = {
     "gin_MUTAG":     TRACE_BASE / "GIN/__dataset_MUTAG___epochs_10___iters_per_epoch_20/traces/stats_ctx_0x39edc5b0",
     "lgcn_gowalla":  TRACE_BASE / "LGCN/__decay_1e_4___lr_0_001___layer_3___seed_2020___dataset__gowalla____topks___20_____recdim_64___epochs_1/traces/stats_ctx_0x2d6e29c0",
     "lgcn_yelp2018": TRACE_BASE / "LGCN/__decay_1e_4___lr_0_001___layer_3___seed_2020___dataset__yelp2018____topks___20_____recdim_64___epochs_1/traces/stats_ctx_0x45421850",
+    "igb_gcn_tiny":  TRACE_BASE / f"IGB/__model_type_gcn___{_IGB_ARGS}/traces/stats_ctx_0x644574637660",
+    "igb_sage_tiny": TRACE_BASE / f"IGB/__model_type_sage___{_IGB_ARGS}/traces/stats_ctx_0x6058e3b62850",
+    "igb_gat_tiny":  TRACE_BASE / f"IGB/__model_type_gat___{_IGB_ARGS}___num_heads_4/traces/stats_ctx_0x59eceac95080",
 }
 
 WORKLOADS = [
@@ -74,6 +86,9 @@ WORKLOADS = [
     ("gin",   "MUTAG"),
     ("lgcn",  "gowalla"),
     ("lgcn",  "yelp2018"),
+    ("igb",   "gcn_tiny"),
+    ("igb",   "sage_tiny"),
+    ("igb",   "gat_tiny"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -240,7 +255,13 @@ def txt_header(tag):
 # ---------------------------------------------------------------------------
 # Process each combo
 # ---------------------------------------------------------------------------
-for model, dataset in WORKLOADS:
+_workloads = [(m, d) for (m, d) in WORKLOADS
+              if not _WL_FILTER
+              or m in _WL_FILTER or f"{m}_{d}" in _WL_FILTER]
+if _WL_FILTER:
+    print(f"Workload filter: {_WL_FILTER} -> {[f'{m}_{d}' for m, d in _workloads]}")
+
+for model, dataset in _workloads:
     tag = f"{model}_{dataset}"
     print(f"\nProcessing {tag} ...")
 
@@ -248,7 +269,10 @@ for model, dataset in WORKLOADS:
     ncc_order,  ncc_rows  = load_csv_by_kernel(STATS_DIR / f"ncc_fp3_{tag}_converted.csv")
 
     total_base_cycles = sum(safe_float(r["gpu_tot_sim_cycle"]) for r in base_rows.values())
-    total_ncc_cycles  = sum(safe_float(r["gpu_tot_sim_cycle"]) for r in ncc_rows.values())
+    # Include baseline cycles for kernels absent from NCC (0%-eligible, transparent to NCC)
+    total_ncc_cycles  = (sum(safe_float(r["gpu_tot_sim_cycle"]) for r in ncc_rows.values())
+                         + sum(safe_float(r["gpu_tot_sim_cycle"]) for name, r in base_rows.items()
+                               if name not in ncc_rows))
 
     # Load grid/block lookup from stats_ctx
     gb_lookup = load_grid_block(STATS_CTX[tag])
@@ -282,7 +306,7 @@ for model, dataset in WORKLOADS:
             gx, gy, gz, bx, by, bz = NO_SHAPE
 
         b = kernel_power(base_rows[kname], total_base_cycles) if kname in base_rows else dict(EMPTY)
-        n = kernel_power(ncc_rows[kname],  total_ncc_cycles)  if kname in ncc_rows  else dict(EMPTY)
+        n = kernel_power(ncc_rows[kname],  total_ncc_cycles)  if kname in ncc_rows  else dict(b)
 
         ncc_hw_dyn_W  = NCC_DYN_W  * (n["cycles"] / total_ncc_cycles) if total_ncc_cycles > 0 else 0.0
         ncc_hw_leak_W = NCC_LEAK_W * (n["cycles"] / total_ncc_cycles) if total_ncc_cycles > 0 else 0.0
