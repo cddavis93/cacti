@@ -49,11 +49,15 @@ SCRIPT_DIR  = Path(__file__).parent
 CACTI_DIR   = SCRIPT_DIR.parent
 CONFIGS_DIR = CACTI_DIR / "configs"
 
-# CLI args: an existing path -> L2 cacti .out to use; any other token(s) ->
-# workload filter (e.g. `igb`, `igb_gcn_tiny`, `egnn gin`). No filter = all.
+# CLI args: an existing *.json -> NCC full-matrix manifest (switches the combo
+# list / stats dir / stats_ctx map to the 19 new combos); any other existing
+# path -> L2 cacti .out to use; any remaining token(s) -> workload filter
+# (e.g. `igb`, `gcn_cora`, `egnn gin`). No filter = all.
 _ARGV = sys.argv[1:]
-_PATH_ARGS = [a for a in _ARGV if Path(a).exists()]
-_WL_FILTER = [a for a in _ARGV if not Path(a).exists()]
+_MANIFEST = next((a for a in _ARGV
+                  if a.endswith(".json") and Path(a).exists()), None)
+_PATH_ARGS = [a for a in _ARGV if a != _MANIFEST and Path(a).exists()]
+_WL_FILTER = [a for a in _ARGV if a != _MANIFEST and not Path(a).exists()]
 OUT_FILE    = Path(_PATH_ARGS[0]) if _PATH_ARGS \
               else CONFIGS_DIR / "cache_a100_baseline.cfg.out"
 L1_OUT_FILE = CONFIGS_DIR / "cache_a100_l1.cfg.out"
@@ -90,6 +94,31 @@ WORKLOADS = [
     ("igb",   "sage_tiny"),
     ("igb",   "gat_tiny"),
 ]
+
+# ---------------------------------------------------------------------------
+# NCC full-matrix override: when a manifest json is passed, replace the combo
+# list / stats dir / stats_ctx map with the 19 new fullmatrix combos. The CACTI
+# .out constants above are geometry-only and stay identical.
+# ---------------------------------------------------------------------------
+if _MANIFEST:
+    import json
+    _mf = json.load(open(_MANIFEST))["combos"]
+    STATS_DIR  = Path("/home/cory/accel-sim-framework/sim_run_12.8/"
+                      "fullmatrix_sims/stats/converted")
+    _FM_TRACE_BASE = Path("/home/cory/accel-sim-framework/hw_run/traces/"
+                          "fullmatrix_traces")
+    STATS_CTX = {}
+    WORKLOADS = []
+    for _e in _mf:
+        _tag = _e["combo"]                 # e.g. gcn_cora  (model_dataset)
+        _model, _dataset = _tag.split("_", 1)
+        WORKLOADS.append((_model, _dataset))
+        _ctx_glob = sorted((_FM_TRACE_BASE / _e["arg_dir"] / "traces").glob("stats_ctx_*"))
+        STATS_CTX[_tag] = _ctx_glob[0] if _ctx_glob else None
+    print(f"NCC full-matrix mode: {len(WORKLOADS)} combos from {Path(_MANIFEST).name}")
+    _KRUN_DIR = SCRIPT_DIR / "kernel_runs_fullmatrix"
+else:
+    _KRUN_DIR = SCRIPT_DIR / "kernel_runs"
 
 # ---------------------------------------------------------------------------
 # Load CACTI .out constants
@@ -369,7 +398,7 @@ for model, dataset in _workloads:
                                  e["invocation_idx"]))
 
     # Write outputs
-    out_dir = SCRIPT_DIR / "kernel_runs" / tag
+    out_dir = _KRUN_DIR / tag
     out_dir.mkdir(parents=True, exist_ok=True)
 
     csv_path = out_dir / "kernel_power.csv"
