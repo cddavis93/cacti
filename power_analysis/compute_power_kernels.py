@@ -3,14 +3,21 @@ compute_power_kernels.py
 ------------------------
 Per-kernel power analysis for each workload/dataset combo.
 
-For each combo, reads the baseline and ncc_fp3 accel-sim stats CSVs,
-matches kernels by name, loads grid/block dimensions from the
-corresponding stats_ctx trace file, and writes:
+For each combo, reads its rows of unified_eval/stats/unified_kernels.csv
+(written by compute_unified.py: baseline and NCC per-launch stats paired by
+trace kernel ID, cache counts repaired by repair_cache_stats.py, launch counts
+from the trace's launch log), loads grid/block dimensions for each kernel ID
+from the corresponding stats_ctx trace file, and writes:
   power_analysis/kernel_runs/<combo>/kernel_power.csv
   power_analysis/kernel_runs/<combo>/kernel_power.txt
 
 Output is sorted by kernel_type (function name), then grid/block shape,
-then invocation index.
+then invocation index. invocation_idx is the kernel's rank by trace kernel ID
+among same-named simulated kernels; launch_count is its number of launches in
+the full workload. (Earlier versions matched baseline and NCC rows by their
+"<name>--<N>" labels, which count occurrences within one run and so paired
+different kernels whenever the NCC run's filtered kernel list dropped an
+earlier instance, and took the N-th stats_ctx launch as the kernel's shape.)
 
 Usage:
   python3 power_analysis/compute_power_kernels.py [path/to/l2.out]
@@ -192,16 +199,36 @@ def safe_float(v):
     except (ValueError, TypeError):
         return 0.0
 
-def load_csv_by_kernel(path):
-    rows = {}
-    order = []
-    with open(path) as f:
-        for row in csv.DictReader(f):
-            name = row["kernel_name"]
-            rows[name] = row
-            if name not in order:
-                order.append(name)
-    return order, rows
+UNIFIED_KERNELS = Path("/home/cory/research_figures/dissertation_figures/"
+                       "unified_eval/stats/unified_kernels.csv")
+# combo tag used here -> compute_unified config name
+UNIFIED_CONFIG = {"gin_IMDBMULTI": "gin_imdb", "gin_MUTAG": "gin_mutag"}
+_STATS = ["gpu_tot_sim_cycle", "L1_read_total_access", "L1_write_total_access",
+          "L2_read_total_access", "L2_write_total_access"]
+
+
+def load_unified(tag):
+    """(kernels, base_rows, ncc_rows) for one combo from unified_kernels.csv.
+
+    kernels: [(kernel_id, kernel_name, launch_count)] in kernel-ID order;
+    base_rows/ncc_rows: {kernel_id: {converted-CSV stat: value}}; ncc_rows only
+    for kernels with an NCC simulation.
+    """
+    config = UNIFIED_CONFIG.get(tag, tag)
+    kernels, base_rows, ncc_rows = [], {}, {}
+    with open(UNIFIED_KERNELS) as f:
+        for r in csv.DictReader(f):
+            if r["config"] != config:
+                continue
+            kid = int(r["kernel_id"])
+            kernels.append((kid, r["kernel_name"], int(float(r["launches"]))))
+            base_rows[kid] = {c: r[f"base_{c}"] for c in _STATS}
+            if r["ncc_gpu_tot_sim_cycle"] != "":
+                ncc_rows[kid] = {c: r[f"ncc_{c}"] for c in _STATS}
+    if not kernels:
+        raise SystemExit(f"{config} not in {UNIFIED_KERNELS}; run compute_unified.py")
+    kernels.sort()
+    return kernels, base_rows, ncc_rows
 
 def kernel_power(row, total_cycles):
     cycles    = safe_float(row.get("gpu_tot_sim_cycle", 0))
@@ -231,7 +258,7 @@ EMPTY = {k: 0.0 for k in ["cycles","l1_reads","l1_writes","l2_reads","l2_writes"
 NO_SHAPE = (0, 0, 0, 0, 0, 0)
 
 CSV_FIELDS = [
-    "kernel_type", "kernel_id", "invocation_idx",
+    "kernel_type", "kernel_id", "invocation_idx", "launch_count",
     "grid_x", "grid_y", "grid_z", "total_blocks",
     "block_x", "block_y", "block_z", "total_threads",
     "base_cycles", "base_l1_reads", "base_l1_writes",
@@ -294,48 +321,28 @@ for model, dataset in _workloads:
     tag = f"{model}_{dataset}"
     print(f"\nProcessing {tag} ...")
 
-    base_order, base_rows = load_csv_by_kernel(STATS_DIR / f"baseline_{tag}_converted.csv")
-    ncc_order,  ncc_rows  = load_csv_by_kernel(STATS_DIR / f"ncc_fp3_{tag}_converted.csv")
+    kernels, base_rows, ncc_rows = load_unified(tag)
 
     total_base_cycles = sum(safe_float(r["gpu_tot_sim_cycle"]) for r in base_rows.values())
     # Include baseline cycles for kernels absent from NCC (0%-eligible, transparent to NCC)
-    total_ncc_cycles  = (sum(safe_float(r["gpu_tot_sim_cycle"]) for r in ncc_rows.values())
-                         + sum(safe_float(r["gpu_tot_sim_cycle"]) for name, r in base_rows.items()
-                               if name not in ncc_rows))
+    total_ncc_cycles  = sum(safe_float((ncc_rows.get(kid) or base_rows[kid])["gpu_tot_sim_cycle"])
+                            for kid in base_rows)
 
-    # Load grid/block lookup from stats_ctx
-    gb_lookup = load_grid_block(STATS_CTX[tag])
-
-    # Build all kernel entries
-    all_kernels = list(base_order)
-    for k in ncc_order:
-        if k not in all_kernels:
-            all_kernels.append(k)
+    # Grid/block per trace kernel ID from stats_ctx
+    shape_by_kid = {launch[0]: launch[1:]
+                    for launches in load_grid_block(STATS_CTX[tag]).values()
+                    for launch in launches}
 
     entries = []
-    inv_counts = {}  # track per-function invocation index
+    inv_counts = {}  # per-function rank by kernel ID
 
-    for kname in all_kernels:
-        # Split function name and invocation suffix (e.g. "func--3" → "func", 3)
-        if "--" in kname:
-            func, inv_str = kname.rsplit("--", 1)
-            try:
-                inv_idx = int(inv_str)
-            except ValueError:
-                func, inv_idx = kname, 0
-        else:
-            func, inv_idx = kname, 0
+    for kid, func, launch_count in kernels:
+        inv_idx = inv_counts.get(func, 0)
+        inv_counts[func] = inv_idx + 1
+        gx, gy, gz, bx, by, bz = shape_by_kid.get(kid, NO_SHAPE)
 
-        # Grid/block from stats_ctx: inv_idx-th launch of this function
-        launches = gb_lookup.get(func, [])
-        if inv_idx < len(launches):
-            kid, gx, gy, gz, bx, by, bz = launches[inv_idx]
-        else:
-            kid = 0
-            gx, gy, gz, bx, by, bz = NO_SHAPE
-
-        b = kernel_power(base_rows[kname], total_base_cycles) if kname in base_rows else dict(EMPTY)
-        n = kernel_power(ncc_rows[kname],  total_ncc_cycles)  if kname in ncc_rows  else dict(b)
+        b = kernel_power(base_rows[kid], total_base_cycles)
+        n = kernel_power(ncc_rows[kid],  total_ncc_cycles) if kid in ncc_rows else dict(b)
 
         ncc_hw_dyn_W  = NCC_DYN_W  * (n["cycles"] / total_ncc_cycles) if total_ncc_cycles > 0 else 0.0
         ncc_hw_leak_W = NCC_LEAK_W * (n["cycles"] / total_ncc_cycles) if total_ncc_cycles > 0 else 0.0
@@ -360,6 +367,7 @@ for model, dataset in _workloads:
             "kernel_type":        func,
             "kernel_id":          kid,
             "invocation_idx":     inv_idx,
+            "launch_count":       launch_count,
             "grid_x": gx, "grid_y": gy, "grid_z": gz,
             "total_blocks":       gx * gy * gz,
             "block_x": bx, "block_y": by, "block_z": bz,
