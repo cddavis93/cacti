@@ -71,7 +71,9 @@ InputParameter::InputParameter()
  ncc_num_units(0),
  ncc_fus_per_unit(32),
  ncc_clock_mhz(1410.0),
- ncc_activity_factor(0.054)
+ ncc_activity_factor(0.054),
+ ncc_gate_count(12000.0),
+ ncc_routing_factor(1.25)
 {
 
 }
@@ -1076,6 +1078,16 @@ InputParameter::parse_cfg(const string & in_file)
       continue;
     }
 
+    if (!strncmp("-ncc_gate_count", line, strlen("-ncc_gate_count"))) {
+      sscanf(line, "-ncc_gate_count %lf", &ncc_gate_count);
+      continue;
+    }
+
+    if (!strncmp("-ncc_routing_factor", line, strlen("-ncc_routing_factor"))) {
+      sscanf(line, "-ncc_routing_factor %lf", &ncc_routing_factor);
+      continue;
+    }
+
   }
   rpters_in_htree = true;
   fclose(fp);
@@ -1375,6 +1387,8 @@ uca_org_t cacti_interface(const string & infile_name)
     np.fus_per_unit    = g_ip->ncc_fus_per_unit;
     np.clock_mhz       = g_ip->ncc_clock_mhz;
     np.activity_factor = g_ip->ncc_activity_factor;
+    np.gate_count      = g_ip->ncc_gate_count;
+    np.routing_factor  = g_ip->ncc_routing_factor;
     NCC_result nr = model_ncc(np);
     output_NCC(nr, *g_ip);
   }
@@ -2779,7 +2793,11 @@ void output_NCC(const NCC_result &nr, const InputParameter &ip)
   cout << "  FP32 FMAs / unit:    " << ip.ncc_fus_per_unit << "\n";
   cout << "  Technology:          " << ip.F_sz_nm << " nm\n";
   cout << "  Clock:               " << ip.ncc_clock_mhz << " MHz\n";
-  cout << "  Activity factor:     " << ip.ncc_activity_factor << "\n\n";
+  cout << "  Activity factor:     " << ip.ncc_activity_factor << "\n";
+  cout << "  Gates per FMA:       " << ip.ncc_gate_count << " NAND2-equivalent\n";
+  cout << "  NAND2 area:          " << nr.nand2_area_um2 << " um^2\n";
+  cout << "  Routing factor:      " << ip.ncc_routing_factor << "\n";
+  cout << "  Area per gate:       " << nr.area_per_gate_um2 << " um^2\n\n";
 
   cout << "  Area per NCC unit:   " << nr.area_per_unit_mm2 << " mm^2\n";
   cout << "  Total NCC area:      " << nr.total_area_mm2 << " mm^2";

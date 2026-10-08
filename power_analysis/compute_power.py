@@ -16,6 +16,8 @@ Sim source: sim_run_12.8/dissertation_sims/stats/converted/
 """
 
 import csv
+import json
+import os
 import sys
 from pathlib import Path
 from io import StringIO
@@ -41,10 +43,26 @@ N_L1_SMS    = 108   # A100 SMs (one L1 per SM)
 CLOCK_HZ    = 1.41e9
 
 # NCC hardware — from CACTI NCC model stdout (ncc.cc); not in .out file.
-NCC_DYN_W          = 0.0282766   # W    NCC dynamic power  (80 units, alpha=0.054)
-NCC_LEAK_W         = 0.157266    # W    NCC leakage power  (80 units)
-NCC_UNIT_AREA_MM2  = 0.0758596   # mm²  NCC area per unit  (32 FMAs @ 22nm)
-NCC_TOTAL_AREA_MM2 = 6.06877     # mm²  NCC area total     (80 units)
+# NCC_VARIANT selects the constants (2026-10-08 gate-count sweep, Revision_Plan.md 3A):
+#   "legacy" (default): the original 3,000-gate, alpha = 0.054 constants, unchanged, so
+#       existing results and figures reproduce exactly.
+#   "g<gates>:<alpha>", e.g. "g12000:0.25": from ncc_variants.json (parse_ncc_out.py),
+#       CACTI's own NAND2 area x 1.25 routing; dynamic power = alpha x 80 x P_unit(alpha = 1).
+NCC_VARIANT = os.environ.get('NCC_VARIANT', 'legacy')
+if NCC_VARIANT == 'legacy':
+    NCC_DYN_W          = 0.0282766   # W    NCC dynamic power  (80 units, alpha=0.054)
+    NCC_LEAK_W         = 0.157266    # W    NCC leakage power  (80 units)
+    NCC_UNIT_AREA_MM2  = 0.0758596   # mm²  NCC area per unit  (32 FMAs @ 22nm)
+    NCC_TOTAL_AREA_MM2 = 6.06877     # mm²  NCC area total     (80 units)
+else:
+    _g, _a = NCC_VARIANT.split(':')
+    _v = json.loads((Path(__file__).resolve().parent / 'ncc_variants.json').read_text())
+    _nv = _v['variants'][_g]
+    NCC_DYN_W          = float(_a) * _v['n_units'] * _nv['p_unit_alpha1_W']
+    NCC_LEAK_W         = _nv['leak_W']
+    NCC_UNIT_AREA_MM2  = _nv['unit_area_mm2']
+    NCC_TOTAL_AREA_MM2 = _nv['total_area_mm2']
+    NCC_E_OP_J         = _nv['e_op_J']   # energy per warp-wide NCC operation (one unit, one cycle)
 
 # ---------------------------------------------------------------------------
 # Load CACTI .out files

@@ -340,6 +340,8 @@ class InputParameter
 	unsigned ncc_fus_per_unit;
 	double   ncc_clock_mhz;
 	double   ncc_activity_factor;
+	double   ncc_gate_count;      // NAND2-equivalent gates per FP32 FMA
+	double   ncc_routing_factor;  // 1 / placement utilization
 
 };
 
