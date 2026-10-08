@@ -105,7 +105,23 @@ L2_AREA_MM2      = float(l2["Area (mm2)"])
 LEAK_L2_TOTAL_W  = LEAK_PER_SLICE_W * N_L2_SLICES
 
 # L1 values
-l1 = load_cacti_out(L1_OUT_FILE, L1_MATCH_CAPACITY_B, L1_MATCH_ASSOC, L1_MATCH_OUTPUT_W)
+# L1_VARIANT selects the L1 model (2026-10-08):
+#   "legacy" (default): 128 KB, 4-way, normal access (cache_a100_l1.cfg), unchanged.
+#   "192k_a64seq": the physical 192 KB unified array, 64-way, sequential access (main value).
+#   "192k_a4": 192 KB, 4-way, normal access (sensitivity).
+# CACTI needs power-of-two capacities, so 192 KB values are the mean of the 128 KB and
+# 256 KB runs of the same organization. Accel-Sim's adaptive L1 is 4 sets x up to 384 ways,
+# which CACTI cannot build; 64-way sequential is the most associative organization it can.
+L1_VARIANT = os.environ.get('L1_VARIANT', 'legacy')
+if L1_VARIANT == 'legacy':
+    l1 = load_cacti_out(L1_OUT_FILE, L1_MATCH_CAPACITY_B, L1_MATCH_ASSOC, L1_MATCH_OUTPUT_W)
+else:
+    _fam, _assoc = {'192k_a64seq': ('a64seq', 64), '192k_a4': ('a4', 4)}[L1_VARIANT]
+    _lo = load_cacti_out(CONFIGS_DIR / ('cache_a100_l1_128k_a64seq.cfg.out' if _assoc == 64
+                                        else 'cache_a100_l1.cfg.out'), 131072, _assoc, L1_MATCH_OUTPUT_W)
+    _hi = load_cacti_out(CONFIGS_DIR / f'cache_a100_l1_256k_{_fam}.cfg.out', 262144, _assoc, L1_MATCH_OUTPUT_W)
+    l1 = {k: (float(_lo[k]) + float(_hi[k])) / 2 for k in
+          ("Dynamic read energy (nJ)", "Dynamic write energy (nJ)", "Standby leakage per bank(mW)", "Area (mm2)")}
 L1_E_READ_NJ     = float(l1["Dynamic read energy (nJ)"])
 L1_E_WRITE_NJ    = float(l1["Dynamic write energy (nJ)"])
 L1_LEAK_PER_SM_W = float(l1["Standby leakage per bank(mW)"]) * 1e-3
