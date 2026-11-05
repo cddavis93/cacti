@@ -1,0 +1,98 @@
+==================================================================================================================================
+  3K-gate vs 12K-gate NCC comparison  (FMA_GATE_COUNT = 3000 vs 12000)
+==================================================================================================================================
+
+SELF-CHECK: gate-count-independent columns (L1/L2 cache power, cycles, reads/writes)
+----------------------------------------------------------------------------------------------------------------------------------
+  PASS - all non-NCC columns identical between 3K and 12K runs, in power_results.csv
+         and in every kernel_power.csv (6/6 workloads).
+
+SECTION A - Isolated NCC hardware (workload-independent)
+----------------------------------------------------------------------------------------------------------------------------------
+Quantity                     3K gates      12K gates      ratio
+NCC dyn power (W)           0.0282766      0.1131070     4.0000
+NCC leak power (W)          0.1572660      0.6290630     4.0000
+NCC total power (W)         0.1855426      0.7421700     4.0000
+NCC unit area (mm2)         0.0758596      0.3034380     4.0000
+NCC total area (mm2)        6.0687700     24.2751000     4.0000
+
+  (Deterministic: every NCC quantity in ncc.cc's model_ncc() is exactly linear in
+   FMA_GATE_COUNT, so 12000/3000 = 4.0x is expected and confirmed above.)
+
+  Per-workload NCC-hardware-only energy (dyn+leak power x kernel-launch duration):
+  --------------------------------------------------------------------------------------------------------------------------------
+Workload             Config    3K energy (J)   12K energy (J)        delta (J)            ratio
+egnn_cora           ncc_fp3     3.405786e-05     1.362314e-04     1.021735e-04           4.0000
+egnn_cora             mixed     8.086499e-05     3.234598e-04     2.425948e-04           4.0000
+egnn_kinship        ncc_fp3     3.506084e-05     1.402433e-04     1.051824e-04           4.0000
+egnn_kinship          mixed     8.544131e-05     3.417651e-04     2.563238e-04           4.0000
+gin_IMDBMULTI       ncc_fp3     3.354233e-04     1.341692e-03     1.006269e-03           4.0000
+gin_IMDBMULTI         mixed     1.042551e-03     4.170203e-03     3.127652e-03           4.0000
+gin_MUTAG           ncc_fp3     1.244233e-04     4.976929e-04     3.732696e-04           4.0000
+gin_MUTAG             mixed     3.669672e-04     1.467868e-03     1.100901e-03           4.0000
+lgcn_gowalla        ncc_fp3     1.372582e-04     5.490326e-04     4.117744e-04           4.0000
+lgcn_gowalla          mixed     6.819271e-04     2.727707e-03     2.045780e-03           4.0000
+lgcn_yelp2018       ncc_fp3     1.847723e-04     7.390887e-04     5.543164e-04           4.0000
+lgcn_yelp2018         mixed     8.325074e-04     3.330028e-03     2.497520e-03           4.0000
+
+SECTION B - System-level total power/energy propagation (baseline / ncc_fp3 / mixed)
+----------------------------------------------------------------------------------------------------------------------------------
+Workload             Config         3K W        12K W       d(W)      %chg        3K E(J)       12K E(J)     %chg E
+egnn_cora          baseline      24.5843      24.5843    +0.0000    +0.00%     1.0715e-02     1.0715e-02     +0.00%
+egnn_cora           ncc_fp3      18.4553      19.0119    +0.5566    +3.02%     3.3876e-03     3.4898e-03     +3.02%
+egnn_cora             mixed      23.5581      24.1148    +0.5566    +2.36%     1.0267e-02     1.0510e-02     +2.36%
+
+egnn_kinship       baseline      24.9149      24.9149    +0.0000    +0.00%     1.1473e-02     1.1473e-02     +0.00%
+egnn_kinship        ncc_fp3      18.0740      18.6307    +0.5566    +3.08%     3.4153e-03     3.5205e-03     +3.08%
+egnn_kinship          mixed      23.7827      24.3393    +0.5566    +2.34%     1.0952e-02     1.1208e-02     +2.34%
+
+gin_IMDBMULTI      baseline      19.0266      19.0266    +0.0000    +0.00%     1.0691e-01     1.0691e-01     +0.00%
+gin_IMDBMULTI       ncc_fp3      18.5019      19.0586    +0.5566    +3.01%     3.3448e-02     3.4454e-02     +3.01%
+gin_IMDBMULTI         mixed      18.7351      19.2917    +0.5566    +2.97%     1.0527e-01     1.0840e-01     +2.97%
+
+gin_MUTAG          baseline      18.9783      18.9783    +0.0000    +0.00%     3.7535e-02     3.7535e-02     +0.00%
+gin_MUTAG           ncc_fp3      18.1939      18.7505    +0.5566    +3.06%     1.2201e-02     1.2574e-02     +3.06%
+gin_MUTAG             mixed      18.8826      19.4392    +0.5566    +2.95%     3.7346e-02     3.8447e-02     +2.95%
+
+lgcn_gowalla       baseline      43.9540      43.9540    +0.0000    +0.00%     1.6154e-01     1.6154e-01     +0.00%
+lgcn_gowalla        ncc_fp3      21.3623      21.9190    +0.5566    +2.61%     1.5803e-02     1.6215e-02     +2.61%
+lgcn_gowalla          mixed      36.6871      37.2437    +0.5566    +1.52%     1.3484e-01     1.3688e-01     +1.52%
+
+lgcn_yelp2018      baseline     222.8286     222.8286    +0.0000    +0.00%     9.9981e-01     9.9981e-01     +0.00%
+lgcn_yelp2018       ncc_fp3      21.3074      21.8640    +0.5566    +2.61%     2.1219e-02     2.1773e-02     +2.61%
+lgcn_yelp2018         mixed     147.0493     147.6059    +0.5566    +0.38%     6.5979e-01     6.6229e-01     +0.38%
+
+  Note: 'baseline' rows are identical (0.00%) between the two runs by construction -
+  the baseline config excludes NCC hardware entirely (base_full_total_W has no NCC term).
+
+SECTION C - Significance verdict
+----------------------------------------------------------------------------------------------------------------------------------
+Workload             NCC share 3K    NCC share 12K     NCC share 3K    NCC share 12K
+                     (ncc_fp3, %)     (ncc_fp3, %)       (mixed, %)       (mixed, %)
+egnn_cora                   1.005            3.904            0.788            3.078
+egnn_kinship                1.027            3.984            0.780            3.049
+gin_IMDBMULTI               1.003            3.894            0.990            3.847
+gin_MUTAG                   1.020            3.958            0.983            3.818
+lgcn_gowalla                0.869            3.386            0.506            1.993
+lgcn_yelp2018               0.871            3.394            0.126            0.503
+----------------------------------------------------------------------------------------------------------------------------------
+AVG (power-wtd)             0.961            3.735            0.414            1.637
+
+VERDICT:
+  NCC hardware power/energy itself is exactly 4.00x higher at 12000 gates
+  (185.54 mW -> 742.17 mW), a deterministic consequence of
+  FMA_GATE_COUNT appearing linearly in ncc.cc's area/dynamic/leakage formulas.
+
+  But NCC hardware is a small fraction of total system power (L1+L2 SRAM dominates):
+    ncc_fp3 config: NCC share averages 0.961% at 3K gates, 3.735% at 12K gates
+    mixed   config: NCC share averages 0.414% at 3K gates, 1.637% at 12K gates
+
+  Net effect on TOTAL system power (full_total_W):
+    ncc_fp3 config: average +2.897% change, 3K -> 12K gates
+    mixed   config: average +2.086% change, 3K -> 12K gates
+
+  => NOT SIGNIFICANT at the system level. Quadrupling the gate-count assumption
+     (3000 -> 12000) changes total system power/energy by well under 5%, because
+     NCC hardware is a small slice of a total dominated by L1/L2 SRAM leakage and
+     dynamic access energy, which do not depend on FMA_GATE_COUNT at all.
+==================================================================================================================================

@@ -91,3 +91,12 @@ Reference rows, not in the sweep:
 - 12,000 gates: 2.3836 mm², 18.569 pJ.
 
 The old dissertation value, 6.07 mm² / 3.62% at 3,000 gates, used the unsourced 0.040 µm² × 2 routing at 7 nm scaled by (22/7)².
+
+## Power gating of the NCC units (main case, user 2026-10-09)
+Kernel-level gating, implemented in `research_figures/dissertation_figures/unified_eval/warm_safe_eval.py` (`gated` mode). The NCC units are powered only while an offloaded kernel runs.
+
+| Parameter | Value used | Source (published versions in `Research_Papers/`) |
+|---|---|---|
+| Wake-up delay | 3 cycles per offloaded launch | `CACTI:WarpedGates`: Abdel-Majeed, Wong, Annavaram, MICRO 2013, pp. 111-122, DOI 10.1145/2540708.2540719, §2.2: "estimated the wakeup delay to be around 3 cycles and break-even time to be between 9 and 24 cycles [13]" |
+| Break-even time | 24 cycles × NCC leakage, per offloaded launch | top of the 9-24 range (`CACTI:WarpedGates` §2.2). `CACTI:PowerGatingEU`: Hu et al., ISLPED 2004, pp. 32-37, DOI 10.1145/1013235.1013249, p. 34: N_break-even ≈ 10 (§2.1); T_overhead = T_wakeup + T_breakeven of 9/14/19/24 explored (§2.2) |
+| Leakage while gated | 0 | `CACTI:PowerGatingEU` §2.1 assumes no leakage through the header device; `CACTI:WarpedGates` §2.2: "a very small leakage current" |
